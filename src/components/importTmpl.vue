@@ -1,149 +1,197 @@
-<!--
- * @Author: 秦少卫
- * @Date: 2022-09-03 19:16:55
- * @LastEditors: 秦少卫
- * @LastEditTime: 2025-03-18 19:01:39
- * @Description: 导入模板
--->
-
 <template>
   <div>
-    <!-- 搜索组件 -->
     <div class="search-box">
       <Select
-        class="select"
         v-model="typeValue"
-        @on-change="changeSelectType"
+        class="select"
         :disabled="pageLoading"
+        @on-change="handleFilterChange"
       >
-        <Option v-for="item in typeList" :value="item.value" :key="item.value">
+        <Option v-for="item in typeList" :key="item.value" :value="item.value">
           {{ item.label }}
         </Option>
       </Select>
       <Input
+        v-model="searchKeyWord"
         class="input"
         :placeholder="`在${typeText}中搜索`"
-        v-model="searchKeyWord"
         search
         :disabled="pageLoading"
         @on-search="startGetList"
       />
     </div>
-    <!-- 列表 -->
-    <div style="height: calc(100vh - 108px)" id="myTemplBox">
+
+    <div id="myTemplBox" class="scroll-box">
       <Scroll
-        key="mysscroll"
         v-if="showScroll"
+        key="template-scroll"
         :on-reach-bottom="nextPage"
         :height="scrollHeight"
         :distance-to-edge="[-1, -1]"
       >
-        <!-- 列表 -->
         <div class="list-box">
-          <Tooltip :content="info.name" v-for="info in pageData" :key="info.src" placement="top">
+          <Tooltip v-for="info in pageData" :key="info.id" :content="info.name" placement="top">
             <div class="tmpl-img-box">
               <Image
                 lazy
                 :src="info.previewSrc"
+                :alt="info.name"
                 fit="contain"
                 height="100%"
-                :alt="info.name"
                 @click="beforeClearTip(info)"
               />
             </div>
           </Tooltip>
         </div>
-        <Spin size="large" fix :show="pageLoading"></Spin>
 
-        <Divider plain v-if="isDownBottm">已经到底了</Divider>
+        <Spin size="large" fix :show="pageLoading"></Spin>
+        <Divider v-if="isDownBottom" plain>已经到底了</Divider>
       </Scroll>
     </div>
   </div>
 </template>
 
-<script setup name="ImportTmpl">
-import useSelect from '@/hooks/select';
-import usePageList from '@/hooks/pageList';
-import { Spin, Modal } from 'view-ui-plus';
+<script setup lang="ts" name="ImportTmpl">
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { debounce } from 'lodash-es';
-
+import { Modal, Spin } from 'view-ui-plus';
 import { useI18n } from 'vue-i18n';
-import { useRouter, useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import useSelect from '@/hooks/select';
+import {
+  listLocalTemplateCategories,
+  loadLocalTemplateById,
+  queryLocalTemplates,
+  type LocalTemplateListItem,
+} from '@/modules/template-library/service';
+
+const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
-const { t } = useI18n();
 const { canvasEditor } = useSelect();
 
-const {
-  startPage,
-  typeValue,
-  typeText,
-  typeList,
-  pageLoading,
-  pageData,
-  searchKeyWord,
-  isDownBottm,
-  startGetList,
-  nextPage,
-  showScroll,
-  scrollHeight,
-  getInfo,
-} = usePageList({
-  typeUrl: 'templ-types',
-  listUrl: 'templs',
-  searchTypeKey: 'templ_type',
-  searchWordKey: 'name',
-  pageSize: 10,
-  scrollElement: '#myTemplBox',
-  fields: ['name'],
+const pageLoading = ref(false);
+const searchKeyWord = ref('');
+const typeValue = ref<number | ''>('');
+const typeList = ref<Array<{ value: number | ''; label: string }>>([]);
+const pageData = ref<LocalTemplateListItem[]>([]);
+const page = ref(1);
+const pagination = reactive({
+  total: 0,
+  pageCount: 1,
+  pageSize: 12,
+});
+const scrollHeight = ref(0);
+const showScroll = ref(false);
+
+const typeText = computed(() => {
+  const current = typeList.value.find((item) => item.value === typeValue.value);
+  return current?.label || '全部模板';
 });
 
-typeValue.value = 20;
+const isDownBottom = computed(() => page.value >= pagination.pageCount);
 
-// 替换提示
-const beforeClearTip = (info) => {
+async function reloadTemplates(reset = false) {
+  if (pageLoading.value) return;
+  pageLoading.value = true;
+  try {
+    const result = await queryLocalTemplates({
+      categoryId: typeValue.value,
+      keyword: searchKeyWord.value,
+      page: page.value,
+      pageSize: pagination.pageSize,
+    });
+    pagination.total = result.total;
+    pagination.pageCount = result.pageCount;
+    pageData.value = reset ? result.items : [...pageData.value, ...result.items];
+  } finally {
+    pageLoading.value = false;
+  }
+}
+
+async function startGetList() {
+  page.value = 1;
+  await reloadTemplates(true);
+}
+
+async function nextPage() {
+  if (page.value >= pagination.pageCount || pageLoading.value) {
+    return;
+  }
+  page.value += 1;
+  await reloadTemplates(false);
+}
+
+const handleFilterChange = debounce(() => {
+  startGetList();
+}, 120);
+
+function replaceRouteQuery(templateId: number) {
+  const query = route.query.admin
+    ? {
+        tempId: String(templateId),
+        admin: 'true',
+      }
+    : {
+        tempId: String(templateId),
+      };
+  router.replace({ path: '/', query });
+}
+
+async function loadTemplateIntoCanvas(templateId: number) {
+  Spin.show({
+    render: (h) => h('div', t('alert.loading_data')),
+  });
+
+  try {
+    const template = await loadLocalTemplateById(templateId);
+    replaceRouteQuery(templateId);
+    canvasEditor.loadJSON(JSON.stringify(template.json), Spin.hide);
+  } catch (error) {
+    Spin.hide();
+    throw error;
+  }
+}
+
+function beforeClearTip(template: LocalTemplateListItem) {
   Modal.confirm({
     title: t('tip'),
     content: `<p>${t('replaceTip')}</p>`,
     okText: t('ok'),
     cancelText: t('cancel'),
-    onOk: () => getTempData(info),
+    onOk: async () => {
+      await loadTemplateIntoCanvas(template.id);
+    },
   });
-};
+}
 
-onMounted(() => {
-  startPage();
-  getTemplInfo();
+async function loadInitialTemplate() {
+  if (!route.query.tempId) {
+    return;
+  }
+  await loadTemplateIntoCanvas(Number(route.query.tempId));
+}
+
+onMounted(async () => {
+  const scrollElement = document.querySelector('#myTemplBox') as HTMLElement | null;
+  if (scrollElement) {
+    scrollHeight.value = scrollElement.offsetHeight;
+    showScroll.value = true;
+  }
+
+  const categories = await listLocalTemplateCategories();
+  typeList.value = [
+    { label: '全部', value: '' },
+    ...categories.map((item) => ({
+      label: item.name,
+      value: item.id,
+    })),
+  ];
+
+  await startGetList();
+  await nextTick();
+  await loadInitialTemplate();
 });
-
-// 获取模板数据
-const getTempData = async (info) => {
-  Spin.show({
-    render: (h) => h('div', t('alert.loading_data')),
-  });
-  const infoRes = await getInfo(info.id);
-  if (route.query.admin) {
-    router.replace('/?tempId=' + info.id + '&admin=true');
-  } else {
-    router.replace('/?tempId=' + info.id);
-  }
-  canvasEditor.loadJSON(JSON.stringify(infoRes.data.data.attributes.json), Spin.hide);
-};
-
-const getTemplInfo = async () => {
-  if (route.query.tempId) {
-    try {
-      const infoRes = await getInfo(route.query.tempId);
-      canvasEditor.loadJSON(JSON.stringify(infoRes.data.data.attributes.json), Spin.hide);
-    } catch (error) {
-      console.log(error);
-    }
-  }
-};
-
-const changeSelectType = debounce(() => {
-  startGetList();
-}, 100);
 </script>
 
 <style scoped lang="less">
@@ -151,12 +199,18 @@ const changeSelectType = debounce(() => {
   padding-top: 10px;
   padding-bottom: 10px;
   display: flex;
+
   .input {
     margin-left: 10px;
   }
+
   .select {
     width: 100px;
   }
+}
+
+.scroll-box {
+  height: calc(100vh - 108px);
 }
 
 .list-box {
@@ -171,6 +225,7 @@ const changeSelectType = debounce(() => {
   cursor: pointer;
   border-radius: 5px;
   overflow: hidden;
+
   &:hover {
     :deep(.ivu-image-img) {
       opacity: 0.8;

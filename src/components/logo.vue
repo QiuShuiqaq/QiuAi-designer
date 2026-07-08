@@ -1,64 +1,47 @@
-<!--
- * @Author: 秦少卫
- * @Date: 2024-06-11 09:12:24
- * @LastEditors: 秦少卫
- * @LastEditTime: 2024-06-12 09:02:50
- * @Description: logo
--->
-
 <template>
   <div class="logo">
-    <a :href="webInfo.url" target="_blank">
-      <img :src="webInfo.img" alt="webInfo.name" />
-    </a>
+    <img class="logo__image" :src="logoSrc" alt="QiuAi" />
+    <div class="logo__text">
+      <strong>QiuAi</strong>
+      <span>Designer</span>
+    </div>
   </div>
 </template>
 
-<script setup name="Logo">
-import { getWebInfo } from '@/api/material';
-import { get, pick } from 'lodash-es';
-const baseURL = import.meta.env.APP_APIHOST;
-
-const webInfo = ref({
-  name: '',
-  logo: '',
-  url: '',
-});
-
-const getWebInfoFun = async () => {
-  const res = await getWebInfo();
-  const info = pick(res.data.data.attributes, ['name', 'url']);
-  info.img = baseURL + get(res.data, 'data.attributes.logo.data.attributes.url');
-  webInfo.value = info;
-};
-
-getWebInfoFun();
+<script setup lang="ts" name="Logo">
+import logoSrc from '../../icon/Q.png';
 </script>
+
 <style scoped lang="less">
 .logo {
-  width: 117px;
-  height: 44px;
-  display: inline-block;
-  margin-right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   margin-left: 2px;
-  a {
-    display: flex;
-    height: 100%;
-    align-items: center;
-    img {
-      display: inline-block;
-      height: 80%;
-    }
-    span {
-      font-size: 18px;
-      font-weight: bold;
-      margin-left: 6px;
-    }
+}
+
+.logo__image {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  display: block;
+}
+
+.logo__text {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.05;
+
+  strong {
+    font-size: 16px;
+    color: #0f172a;
   }
-  // text-align: center;
-  // vertical-align: middle;
-  // .ivu-icon {
-  //   vertical-align: super;
-  // }
+
+  span {
+    font-size: 11px;
+    color: #475467;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
 }
 </style>

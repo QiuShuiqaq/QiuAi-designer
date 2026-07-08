@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "a template project for vue3, ViewUIPlus, TypeScript and Vite.",
+  "packageManager": "pnpm@8.4.0",
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "serve": "pnpm dev",
@@ -10,6 +11,7 @@
     "dev:staging": "vite serve --mode=staging",
     "dev:prod": "vite serve --mode=production",
     "build": "vite build",
+    "collect:local-templates": "node scripts/collect-local-templates.mjs",
     "build:sdk": "pnpm -C packages/core build",
     "build:staging": "vite build --mode=staging",
     "preview": "pnpm build && vite preview",

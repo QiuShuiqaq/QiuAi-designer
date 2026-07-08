@@ -8,12 +8,9 @@
 <template>
   <div class="home">
     <Layout>
-      <!-- 头部区域 -->
       <Top v-if="state.show" :ruler="state.ruler" @update:ruler="rulerSwitch"></Top>
       <Content style="display: flex; height: calc(100vh - 64px); position: relative">
-        <!-- 左侧区域 -->
         <Left v-if="state.show"></Left>
-        <!-- 画布区域 -->
         <div id="workspace">
           <div class="canvas-box">
             <div class="inside-shadow"></div>
@@ -35,7 +32,6 @@ import Right from './components/right/index.vue';
 
 import zoom from '@/components/zoom.vue';
 import dragMode from '@/components/dragMode.vue';
-// 功能组件
 import { fabric } from 'fabric';
 
 import Editor, {
@@ -43,7 +39,6 @@ import Editor, {
   DringPlugin,
   AlignGuidLinePlugin,
   ControlsPlugin,
-  // ControlsRotatePlugin,
   CenterAlignPlugin,
   LayerPlugin,
   CopyPlugin,
@@ -76,8 +71,6 @@ import Editor, {
 } from '@kuaitu/core';
 
 const APIHOST = import.meta.env.APP_APIHOST;
-
-// 创建编辑器
 const canvasEditor = new Editor() as IEditor;
 
 const state = reactive({
@@ -87,23 +80,19 @@ const state = reactive({
 });
 
 onMounted(() => {
-  // 初始化fabric
   const canvas = new fabric.Canvas('canvas', {
-    fireRightClick: true, // 启用右键，button的数字为3
-    stopContextMenu: true, // 禁止默认右键菜单
-    controlsAboveOverlay: true, // 超出clipPath后仍然展示控制条
-    // imageSmoothingEnabled: false, // 解决文字导出后不清晰问题
-    preserveObjectStacking: true, // 当选择画布中的对象时，让对象不在顶层。
+    fireRightClick: true,
+    stopContextMenu: true,
+    controlsAboveOverlay: true,
+    preserveObjectStacking: true,
   });
 
-  // 初始化编辑器
   canvasEditor.init(canvas);
   canvasEditor
     .use(DringPlugin)
     .use(PolygonModifyPlugin)
     .use(AlignGuidLinePlugin)
     .use(ControlsPlugin)
-    // .use(ControlsRotatePlugin)
     .use(CenterAlignPlugin)
     .use(LayerPlugin)
     .use(CopyPlugin)
@@ -138,32 +127,30 @@ onMounted(() => {
     .use(MaskPlugin);
 
   state.show = true;
-  // 默认打开标尺
   if (state.ruler) {
     canvasEditor.rulerEnable();
   }
 });
 
 onUnmounted(() => canvasEditor.destory());
+
 const rulerSwitch = (val) => {
   if (val) {
     canvasEditor.rulerEnable();
   } else {
     canvasEditor.rulerDisable();
   }
-  // 使标尺开关组件失焦，避免响应键盘的空格事件
   document.activeElement.blur();
 };
 
 provide('fabric', fabric);
 provide('canvasEditor', canvasEditor);
-// provide('mixinState', mixinState);
 </script>
 
 <style lang="less" scoped>
 :deep(.ivu-layout-header) {
   --height: 45px;
-  padding: 0 0px;
+  padding: 0 0;
   border-bottom: 1px solid #eef2f8;
   background: #fff;
   height: var(--height);
@@ -185,7 +172,6 @@ provide('canvasEditor', canvasEditor);
   position: relative;
 }
 
-// 画布内阴影
 .inside-shadow {
   position: absolute;
   width: 100%;
@@ -209,12 +195,10 @@ provide('canvasEditor', canvasEditor);
   overflow: hidden;
 }
 
-// 标尺
 .switch {
   margin-right: 10px;
 }
 
-// 网格背景
 .design-stage-grid {
   --offsetX: 0px;
   --offsetY: 0px;

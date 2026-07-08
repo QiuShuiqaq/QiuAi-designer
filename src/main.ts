@@ -11,8 +11,10 @@ import '@/assets/fonts/font.css';
 import { VueMasonryPlugin } from 'vue-masonry';
 
 import i18n from './language/index';
+import { bootstrapLocalTemplateLibrary } from '@/modules/template-library/bootstrap';
 
 async function bootstrap() {
+  await bootstrapLocalTemplateLibrary();
   const app = createApp(App);
   app.use(VueMasonryPlugin);
   app.use(router);

@@ -1,62 +1,49 @@
-<!--
- * @Author: 秦少卫
- * @Date: 2024-06-12 16:48:10
- * @LastEditors: 秦少卫
- * @LastEditTime: 2024-10-07 17:05:39
- * @Description: 幻灯片
--->
 <template>
   <div class="banner">
-    <Carousel
-      v-model="value"
-      :height="250"
-      :autoplay="setting.autoplay"
-      :autoplay-speed="setting.autoplaySpeed"
-      :dots="setting.dots"
-      :radius-dot="setting.radiusDot"
-      :trigger="setting.trigger"
-      :arrow="setting.arrow"
-    >
-      <CarouselItem class="img-box" v-for="item in banners" :key="item.id">
-        <a :href="item.url" target="_blank">
-          <img :src="item.imgUrl" :alt="item.title" />
-        </a>
-      </CarouselItem>
-    </Carousel>
+    <div class="banner__content">
+      <p class="banner__eyebrow">QiuAi Designer</p>
+      <h1 class="banner__title">鏈湴妯℃澘搴撳凡鎺ュ叆</h1>
+      <p class="banner__desc">
+        妯℃澘銆佸皝闈㈠浘鍜屼緷璧栫礌鏉愬凡缁忔敹鍙ｅ埌鏈湴锛岄€夋嫨妯℃澘鍚庡彲浠ョ洿鎺ヨ繘鍏ョ紪杈戙€?
+      </p>
+    </div>
   </div>
 </template>
-<script name="Banner" setup>
-import { commonBannerApi } from '@/api/material';
-const setting = reactive({
-  autoplay: false,
-  autoplaySpeed: 2000,
-  dots: 'inside',
-  radiusDot: false,
-  trigger: 'click',
-  arrow: 'hover',
-});
 
-const banners = ref([]);
-
-commonBannerApi.find({ populate: '*' }).then((res) => {
-  banners.value = res.data;
-});
-</script>
 <style lang="less" scoped>
 .banner {
   width: 1200px;
-  margin: 0 auto;
-  margin-top: 20px;
-  border-radius: 10px;
+  margin: 20px auto 0;
+  border-radius: 16px;
   overflow: hidden;
+  background: linear-gradient(135deg, #101828 0%, #1d4ed8 55%, #38bdf8 100%);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
 }
-.img-box {
-  overflow: hidden;
-  height: 100%;
-  img {
-    height: 100%;
-    margin: 0 auto;
-    display: block;
-  }
+
+.banner__content {
+  padding: 32px 36px;
+  color: #fff;
+}
+
+.banner__eyebrow {
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.banner__title {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.15;
+}
+
+.banner__desc {
+  max-width: 640px;
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.7;
+  opacity: 0.92;
 }
 </style>

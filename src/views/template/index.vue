@@ -1,80 +1,68 @@
-<!--
- * @Author: 秦少卫
- * @Date: 2024-05-17 15:30:21
- * @LastEditors: 秦少卫
- * @LastEditTime: 2024-10-13 17:21:09
- * @Description: file content
--->
 <template>
   <div class="home">
     <Layout>
-      <!-- 头部区域 -->
       <Header :style="{ position: 'fixed', width: '100%', zIndex: 99 }">
         <div class="left">
           <logo></logo>
-          <!-- 导入 -->
           <Divider type="vertical" />
           在线设计工具
         </div>
 
         <div class="right">
-          <Button type="primary" to="/" size="smail" target="_blank">新建设计</Button>
+          <Button type="primary" to="/" size="small" target="_blank">新建设计</Button>
           <Divider type="vertical" />
-          <a href="https://pro.kuaitu.cc/" target="_blank">
-            <img width="15" :src="proIcon" alt="vue-fbric-editor" />
-          </a>
-          <!-- 预览 -->
-          <login></login>
           <lang></lang>
         </div>
       </Header>
 
-      <!-- banner -->
       <Content :style="{ margin: '40px 20px 0', minHeight: '500px', minWidth: '1200px' }">
         <banner></banner>
+
         <div class="search-box">
           <Input
+            v-model="keyword"
             size="large"
             class="search-input"
             clearable
             search
-            v-model="filters.name.$containsi"
             enter-button
             placeholder="请输入关键词"
             @on-search="search"
           />
-          <TagSelect v-model="filters.templ_type.$in" @on-change="search">
-            <TagSelectOption :name="item.id" :key="item.id" v-for="item in typeList">
+
+          <TagSelect v-model="selectedCategories" @on-change="search">
+            <TagSelectOption v-for="item in typeList" :key="item.id" :name="item.id">
               {{ item.name }}
             </TagSelectOption>
           </TagSelect>
         </div>
 
-        <!-- grid布局 -->
         <div
-          class="img-box grid"
           id="imgBox"
+          class="img-box grid"
           v-masonry
           transition-duration="0.3s"
           :gutter="10"
           item-selector=".grid-item"
         >
-          <div v-masonry-tile class="img-item grid-item" v-for="info in templList" :key="info.id">
+          <div v-for="info in templList" :key="info.id" v-masonry-tile class="img-item grid-item">
             <Tooltip :content="info.name" placement="top">
-              <img :src="info.src" :alt="info.name" @click="toInfo(info)" />
+              <img :src="info.previewSrc" :alt="info.name" @click="toInfo(info)" />
             </Tooltip>
           </div>
         </div>
+
         <Page
+          v-model="page"
           class="page"
           :total="total"
-          v-model="page"
-          @on-change="getTmplListHandel"
-          @on-page-size-change="(val) => (pageSize = val)"
           :page-size="pageSize"
           show-sizer
+          @on-change="handlePageChange"
+          @on-page-size-change="handlePageSizeChange"
         />
       </Content>
+
       <Footer class="layout-footer-center">
         {{ year }} &copy; 北京迅单科技有限公司 京ICP备2022034407号-2
       </Footer>
@@ -82,106 +70,91 @@
   </div>
 </template>
 
-<script name="Home" setup>
-import { toRaw } from 'vue';
+<script setup lang="ts" name="TemplateGallery">
+import { onMounted, ref } from 'vue';
 import { Spin } from 'view-ui-plus';
-import qs from 'qs';
-import proIcon from '@/assets/icon/proIcon.png';
-
 import { useRouter } from 'vue-router';
-const router = useRouter();
-// 路由
 import banner from './components/banner.vue';
-// 顶部组件
 import logo from '@/components/logo.vue';
 import lang from '@/components/lang.vue';
-import login from '@/components/login';
+import {
+  listLocalTemplateCategories,
+  queryLocalTemplates,
+  type LocalTemplateListItem,
+} from '@/modules/template-library/service';
 
-import { getMaterialPreviewUrl } from '@/hooks/usePageList';
-import { getTmplTypes, getTmplList } from '@/api/material';
+const router = useRouter();
 
-// 分类列表
-const typeList = ref([]);
-// 备案年份
 const year = ref(new Date().getFullYear());
-const getTypeListHandel = async () => {
-  const res = await getTmplTypes();
-  typeList.value = res.data.data.map((item) => {
-    return {
-      id: item.id,
-      name: item.attributes.name,
-    };
-  });
-};
-getTypeListHandel();
-
-// 模板列表
-const templList = ref([]);
+const typeList = ref<Array<{ id: number; name: string }>>([]);
+const templList = ref<LocalTemplateListItem[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
+const keyword = ref('');
+const selectedCategories = ref<number[]>([]);
 
-const filters = reactive({
-  name: {
-    $containsi: '',
-  },
-  templ_type: {
-    $in: [],
-  },
-});
+async function getTypeListHandler() {
+  const categories = await listLocalTemplateCategories();
+  typeList.value = categories.map((item) => ({
+    id: item.id,
+    name: item.name,
+  }));
+}
 
-const getTmplListHandel = async () => {
-  const params = {
-    populate: {
-      img: '*',
-    },
-    filters: toRaw(filters),
-    fields: ['name'],
-    pagination: {
-      page: page.value,
-      pageSize: pageSize.value,
-    },
-  };
+async function getTemplateListHandler() {
   Spin.show();
   try {
-    const res = await getTmplList(qs.stringify(params));
-    templList.value = [];
-    await nextTick();
-    total.value = res.data.meta.pagination.total;
-    templList.value = res.data.data.map((item) => ({
-      id: item.id,
-      name: item.attributes.name,
-      src: getMaterialPreviewUrl(item.attributes.img),
-    }));
-  } catch (error) {
-    console.log(error);
+    const activeCategory = selectedCategories.value[0] || '';
+    const result = await queryLocalTemplates({
+      categoryId: activeCategory,
+      keyword: keyword.value,
+      page: page.value,
+      pageSize: pageSize.value,
+    });
+    total.value = result.total;
+    templList.value = result.items;
+  } finally {
+    Spin.hide();
   }
-  Spin.hide();
-};
+}
 
-const search = () => {
+async function search() {
   page.value = 1;
-  getTmplListHandel();
-};
-getTmplListHandel();
+  await getTemplateListHandler();
+}
 
-const toInfo = (info) => {
+async function handlePageChange(nextPage: number) {
+  page.value = nextPage;
+  await getTemplateListHandler();
+}
+
+async function handlePageSizeChange(nextPageSize: number) {
+  pageSize.value = nextPageSize;
+  page.value = 1;
+  await getTemplateListHandler();
+}
+
+function toInfo(info: LocalTemplateListItem) {
   const href = router.resolve({
     path: '/',
     query: {
-      tempId: info.id,
+      tempId: String(info.id),
     },
   });
-  console.log(href, 1111);
-  // 点击事件
   window.open(href.href, '_blank');
-};
+}
+
+onMounted(async () => {
+  await getTypeListHandler();
+  await getTemplateListHandler();
+});
 </script>
-<style lang="less" scoped>
-// header
+
+<style scoped lang="less">
 :deep(.ivu-layout-header) {
   --height: 45px;
-  padding: 0 0px;
+  padding: 0;
   border-bottom: 1px solid #eef2f8;
   background: #fff;
   height: var(--height);
@@ -193,19 +166,13 @@ const toInfo = (info) => {
   .right {
     display: flex;
     align-items: center;
-    img {
-      display: block;
-      margin-right: 10px;
-    }
   }
 }
 
-// footer
 .layout-footer-center {
   text-align: center;
 }
 
-// 搜索弹框
 .search-box {
   width: 1200px;
   margin: 20px auto;
@@ -219,6 +186,7 @@ const toInfo = (info) => {
     max-height: none;
     margin-left: 0;
     margin-top: 20px;
+
     .ivu-tag {
       font-size: 20px;
       line-height: 32px;
@@ -227,10 +195,10 @@ const toInfo = (info) => {
   }
 }
 
-// 流布局
 .img-box {
   width: 1200px;
   margin: 0 auto;
+
   .grid-item {
     width: 232px;
     cursor: pointer;
@@ -239,6 +207,7 @@ const toInfo = (info) => {
     img {
       width: 100%;
       border-radius: 10px;
+
       &:hover {
         transform: scale(1.02);
       }
@@ -246,7 +215,6 @@ const toInfo = (info) => {
   }
 }
 
-// 分页
 .page {
   margin: 20px auto;
   text-align: center;
