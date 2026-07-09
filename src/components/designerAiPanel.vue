@@ -8,7 +8,7 @@
       <div v-if="!platformReady" class="designer-ai__empty">
         <Alert type="warning" show-icon>
           <template #desc>
-            未配置 `APP_PLATFORM_API_BASE_URL`，当前无法连接 qiuai-platform。
+            未配置 `APP_PLATFORM_API_BASE_URL`，当前无法连接 `qiuai-platform`。
           </template>
         </Alert>
       </div>
@@ -76,7 +76,7 @@
             </div>
             <Alert v-else type="warning" show-icon>
               <template #desc>
-                当前模板没有 AI 槽位。需要在模板对象上添加 `extensionType: "ai-slot"` 和对应
+                当前模板没有 AI 槽位。需要在模板对象上增加 `extensionType: "ai-slot"` 和对应的
                 `extension.role` 后才能使用。
               </template>
             </Alert>
@@ -116,19 +116,21 @@ import { useRoute } from 'vue-router';
 
 import useSelect from '@/hooks/select';
 import { applyDesignerAiPatch } from '@/modules/designer-ai/patch';
-import { extractDesignerAiTemplateSlots } from '@/modules/designer-ai/template-slots';
 import { isPlatformApiConfigured } from '@/platform/config';
 import {
   cancelDesignerAiJob,
   createDesignerAiJob,
   getDesignerAiCapabilities,
   getDesignerAiJob,
+  parseDesignerAiTemplateSlots,
 } from '@/platform/designer-ai';
+import { getPlatformActivationStatus } from '@/platform/session';
 import type {
   DesignerAiCapabilities,
   DesignerAiJob,
   DesignerAiTemplateSlot,
   DesignerAiTemplateSlotsPayload,
+  PlatformActivationStatus,
 } from '@/platform/types';
 
 const route = useRoute();
@@ -149,6 +151,7 @@ const capabilities = ref<DesignerAiCapabilities | null>(null);
 const parsedSlots = ref<DesignerAiTemplateSlotsPayload | null>(null);
 const selectedSlotIds = ref<string[]>([]);
 const currentJob = ref<DesignerAiJob | null>(null);
+const activationStatus = ref<PlatformActivationStatus | null>(null);
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -169,10 +172,18 @@ const enabledSlots = computed(() => slots.value.filter((slot) => slot.aiEnabled)
 const selectedSlots = computed(() =>
   enabledSlots.value.filter((slot) => selectedSlotIds.value.includes(slot.id))
 );
+const isActivated = computed(() => {
+  return (
+    activationStatus.value?.status === 'activated' &&
+    Boolean(activationStatus.value?.canUseApp) &&
+    Boolean(activationStatus.value?.sessionToken)
+  );
+});
 
 const canSubmit = computed(() => {
   return Boolean(
     platformReady &&
+      isActivated.value &&
       prompt.value.trim() &&
       selectedSlots.value.length &&
       !isSubmitting.value &&
@@ -238,6 +249,10 @@ function getDefaultSelectedIds(nextSlots: DesignerAiTemplateSlot[]) {
     .map((slot) => slot.id);
 }
 
+async function loadActivationStatus() {
+  activationStatus.value = await getPlatformActivationStatus();
+}
+
 async function loadCapabilities() {
   capabilities.value = await getDesignerAiCapabilities();
   if (!supportedLanguages.value.includes(language.value)) {
@@ -251,7 +266,7 @@ async function refreshSlots() {
 
   try {
     const { snapshot } = getCanvasSnapshot();
-    const nextParsedSlots = extractDesignerAiTemplateSlots({
+    const nextParsedSlots = await parseDesignerAiTemplateSlots({
       templateId: templateId.value,
       templateSnapshot: snapshot,
     });
@@ -348,6 +363,9 @@ async function pollJob(jobId: string) {
 
 async function submitJob() {
   if (!canSubmit.value) {
+    if (!isActivated.value) {
+      errorMessage.value = '当前设备未激活，无法提交 AI 任务。请先在平台中心完成授权激活。';
+    }
     return;
   }
 
@@ -413,8 +431,12 @@ async function bootstrapModal() {
   infoMessage.value = '';
 
   try {
+    await loadActivationStatus();
     await loadCapabilities();
     await refreshSlots();
+    if (!isActivated.value) {
+      infoMessage.value = '当前设备未激活，AI 功能需先在平台中心完成授权激活。';
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'AI 面板初始化失败';
   } finally {

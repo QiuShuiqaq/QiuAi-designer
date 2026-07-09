@@ -5,11 +5,11 @@
       <span class="platform-center__trigger-sub">{{ triggerSubtitle }}</span>
     </Button>
 
-    <Modal v-model="visible" title="平台中心" width="980" footer-hide>
+    <Modal v-model="visible" title="平台中心" width="1020" footer-hide>
       <div v-if="!platformReady" class="platform-center__empty">
         <Alert type="warning" show-icon>
           <template #desc>
-            未配置 `APP_PLATFORM_API_BASE_URL`，当前无法连接 qiuai-platform。
+            未配置 `APP_PLATFORM_API_BASE_URL`，当前无法连接 `qiuai-platform`。
           </template>
         </Alert>
       </div>
@@ -23,37 +23,46 @@
 
         <div class="platform-center__summary">
           <div class="platform-center__summary-card">
-            <span class="platform-center__label">产品</span>
+            <span>产品</span>
             <strong>{{ productMeta?.productName || 'QiuAi Designer' }}</strong>
-            <span>{{ productMeta?.productKey || PLATFORM_PRODUCT_KEY }}</span>
+            <small>{{ productMeta?.productKey || PLATFORM_PRODUCT_KEY }}</small>
           </div>
           <div class="platform-center__summary-card">
-            <span class="platform-center__label">状态</span>
+            <span>状态</span>
             <strong>{{ statusLabel }}</strong>
-            <span>{{ activationStatus?.nextAction || 'activate-license' }}</span>
+            <small>{{ activationStatus?.nextAction || 'activate-license' }}</small>
           </div>
           <div class="platform-center__summary-card">
-            <span class="platform-center__label">设备</span>
+            <span>设备</span>
             <strong>{{ shortDeviceCode }}</strong>
-            <span>{{ deviceName }}</span>
+            <small>{{ deviceName }}</small>
+          </div>
+          <div class="platform-center__summary-card">
+            <span>授权套餐</span>
+            <strong>{{ activePackageName }}</strong>
+            <small>{{ formattedExpireAt }}</small>
           </div>
         </div>
 
         <Tabs :animated="false">
           <TabPane label="授权">
             <div class="platform-center__grid">
-              <div class="platform-center__panel">
+              <section class="platform-center__panel">
                 <div class="platform-center__panel-head">
                   <h4>当前状态</h4>
                   <Button size="small" @click="refreshAll">刷新</Button>
                 </div>
 
                 <div class="platform-center__kv">
-                  <span>用户</span>
+                  <span>客户名称</span>
                   <strong>{{ activationStatus?.customerName || '-' }}</strong>
                 </div>
                 <div class="platform-center__kv">
-                  <span>授权包</span>
+                  <span>联系信息</span>
+                  <strong>{{ activationForm.contact || '-' }}</strong>
+                </div>
+                <div class="platform-center__kv">
+                  <span>授权套餐</span>
                   <strong>{{ activePackageName }}</strong>
                 </div>
                 <div class="platform-center__kv">
@@ -61,16 +70,16 @@
                   <strong>{{ formattedExpireAt }}</strong>
                 </div>
                 <div class="platform-center__kv">
-                  <span>说明</span>
+                  <span>状态说明</span>
                   <strong>{{ activationStatus?.message || '未激活' }}</strong>
                 </div>
 
                 <div class="platform-center__panel-actions">
                   <Button v-if="isActivated" @click="clearSession">清除会话</Button>
                 </div>
-              </div>
+              </section>
 
-              <div class="platform-center__panel">
+              <section class="platform-center__panel">
                 <div class="platform-center__panel-head">
                   <h4>设备激活</h4>
                 </div>
@@ -100,7 +109,7 @@
                     </Button>
                   </FormItem>
                 </Form>
-              </div>
+              </section>
             </div>
           </TabPane>
 
@@ -127,7 +136,7 @@
                 </div>
               </div>
 
-              <div class="platform-center__panel platform-center__panel--stacked">
+              <section class="platform-center__panel">
                 <div class="platform-center__panel-head">
                   <h4>钱包直充</h4>
                   <Button
@@ -140,7 +149,7 @@
                   </Button>
                 </div>
 
-                <div class="platform-center__topup-form">
+                <div class="platform-center__inline-form">
                   <Select v-model="topupForm.walletType">
                     <Option value="image">图片钱包</Option>
                     <Option value="text">文本钱包</Option>
@@ -166,12 +175,12 @@
                     <Button @click="openPaymentForOrder(currentTopupOrder)">打开支付</Button>
                   </div>
                 </div>
-              </div>
+              </section>
             </template>
           </TabPane>
 
           <TabPane label="购买">
-            <div class="platform-center__panel platform-center__panel--full">
+            <section class="platform-center__panel platform-center__panel--full">
               <div class="platform-center__panel-head">
                 <h4>代理价格校验</h4>
                 <Button size="small" :loading="isVerifyingAgent" @click="verifyAgentCode">
@@ -186,7 +195,7 @@
                 />
                 <span class="platform-center__agent-tip">{{ agentQuoteTip }}</span>
               </div>
-            </div>
+            </section>
 
             <div v-if="packageError" class="platform-center__empty">
               <Alert type="warning" show-icon>
@@ -274,7 +283,7 @@
                       <span>{{ pkg.durationDays }} 天</span>
                       <span>图 {{ formatBalance(pkg.includedImageBalanceCny) }}</span>
                       <span>文 {{ formatBalance(pkg.includedTextBalanceCny) }}</span>
-                      <span>视 {{ formatBalance(pkg.includedVideoBalanceCny) }}</span>
+                      <span>视频 {{ formatBalance(pkg.includedVideoBalanceCny) }}</span>
                     </div>
                     <div class="platform-center__panel-actions">
                       <Button
@@ -377,6 +386,7 @@ import type {
   PlatformActivationStatus,
   PlatformAgentQuote,
   PlatformLicenseOrder,
+  PlatformOrderPaymentPayload,
   PlatformProductMeta,
   PlatformSoftwarePackage,
   PlatformSubscriptionOrder,
@@ -521,7 +531,7 @@ function persistProfile() {
   });
 }
 
-function getPaymentUrl(order: { paymentPayload?: Record<string, unknown> | null }) {
+function getPaymentUrl(order: { paymentPayload?: PlatformOrderPaymentPayload | null }) {
   const payload = order?.paymentPayload || {};
   const url =
     payload.checkoutUrl ||
@@ -534,7 +544,7 @@ function getPaymentUrl(order: { paymentPayload?: Record<string, unknown> | null 
   return String(url || '').trim();
 }
 
-async function openPaymentForOrder(order: { paymentPayload?: Record<string, unknown> | null }) {
+async function openPaymentForOrder(order: { paymentPayload?: PlatformOrderPaymentPayload | null }) {
   const url = getPaymentUrl(order);
   if (!url) {
     Message.error('订单已创建，但服务端没有返回可用的支付链接');
@@ -864,7 +874,7 @@ onMounted(async () => {
 
 .platform-center__trigger-main {
   font-size: 13px;
-  color: #0f172a;
+  font-weight: 600;
 }
 
 .platform-center__trigger-sub {
@@ -874,12 +884,16 @@ onMounted(async () => {
 
 .platform-center__body {
   position: relative;
-  min-height: 220px;
+  min-height: 320px;
+}
+
+.platform-center__empty {
+  padding: 8px 0;
 }
 
 .platform-center__summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -890,37 +904,32 @@ onMounted(async () => {
 .platform-center__package-card,
 .platform-center__order-card {
   border: 1px solid #e5e7eb;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
 }
 
 .platform-center__summary-card {
-  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 14px;
+}
+
+.platform-center__summary-card span,
+.platform-center__summary-card small {
+  color: #667085;
+  font-size: 12px;
 }
 
 .platform-center__summary-card strong {
-  font-size: 16px;
   color: #111827;
-}
-
-.platform-center__summary-card span {
-  color: #667085;
-  word-break: break-all;
-}
-
-.platform-center__label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  word-break: break-word;
 }
 
 .platform-center__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 14px;
 }
 
 .platform-center__stack {
@@ -935,22 +944,26 @@ onMounted(async () => {
   gap: 12px;
 }
 
-.platform-center__section-head {
+.platform-center__section-head,
+.platform-center__panel-head,
+.platform-center__order-head,
+.platform-center__package-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.platform-center__section-head h4 {
+.platform-center__section-head h4,
+.platform-center__panel-head h4 {
   margin: 0;
   font-size: 15px;
   color: #111827;
 }
 
 .platform-center__section-tip {
-  color: #667085;
   font-size: 12px;
+  color: #667085;
 }
 
 .platform-center__panel {
@@ -958,33 +971,19 @@ onMounted(async () => {
 }
 
 .platform-center__panel--full {
-  margin-bottom: 0;
-}
-
-.platform-center__panel--stacked {
-  margin-top: 16px;
-}
-
-.platform-center__panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.platform-center__panel-head h4 {
-  margin: 0;
-  font-size: 15px;
-  color: #111827;
+  width: 100%;
 }
 
 .platform-center__kv {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 0;
-  border-bottom: 1px solid #f3f4f6;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.platform-center__kv:last-of-type {
+  border-bottom: 0;
 }
 
 .platform-center__kv span {
@@ -999,18 +998,19 @@ onMounted(async () => {
 .platform-center__panel-actions {
   margin-top: 14px;
   display: flex;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 10px;
 }
 
 .platform-center__wallet {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .platform-center__wallet-card {
-  padding: 18px 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1018,34 +1018,30 @@ onMounted(async () => {
 
 .platform-center__wallet-card span {
   color: #667085;
+  font-size: 12px;
 }
 
 .platform-center__wallet-card strong {
-  font-size: 22px;
+  font-size: 20px;
   color: #111827;
 }
 
-.platform-center__topup-form {
+.platform-center__inline-form {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) 160px;
-  gap: 12px;
+  grid-template-columns: 180px 1fr auto;
+  gap: 10px;
 }
 
 .platform-center__agent-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 320px) 1fr;
   gap: 12px;
-}
-
-.platform-center__agent-row :deep(.ivu-input-wrapper) {
-  flex: 1;
+  align-items: center;
 }
 
 .platform-center__agent-tip {
-  color: #667085;
   font-size: 12px;
-  min-width: 180px;
-  text-align: right;
+  color: #667085;
 }
 
 .platform-center__package-grid,
@@ -1060,24 +1056,16 @@ onMounted(async () => {
   padding: 16px;
 }
 
-.platform-center__package-head,
-.platform-center__order-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
 .platform-center__package-price {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .platform-center__package-price-now {
-  font-size: 22px;
+  font-size: 24px;
+  line-height: 1;
   font-weight: 700;
   color: #111827;
 }
@@ -1088,43 +1076,33 @@ onMounted(async () => {
 }
 
 .platform-center__package-desc {
-  margin: 0 0 12px;
-  color: #667085;
-  min-height: 40px;
-  line-height: 1.6;
+  margin: 12px 0;
+  min-height: 36px;
+  color: #475467;
+  line-height: 1.5;
 }
 
 .platform-center__package-meta,
 .platform-center__order-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  color: #475467;
+  gap: 12px;
+  color: #667085;
   font-size: 12px;
 }
 
-.platform-center__empty {
-  padding: 12px 0;
-}
-
-@media (max-width: 900px) {
+@media (max-width: 980px) {
   .platform-center__summary,
   .platform-center__grid,
   .platform-center__wallet,
   .platform-center__package-grid,
-  .platform-center__order-grid,
-  .platform-center__topup-form {
+  .platform-center__order-grid {
     grid-template-columns: 1fr;
   }
 
+  .platform-center__inline-form,
   .platform-center__agent-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .platform-center__agent-tip {
-    min-width: 0;
-    text-align: left;
+    grid-template-columns: 1fr;
   }
 }
 </style>

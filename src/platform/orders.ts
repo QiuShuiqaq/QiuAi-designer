@@ -1,5 +1,6 @@
 import { PLATFORM_PRODUCT_KEY } from './config';
 import { platformHttp } from './http';
+import { getPlatformDeviceFingerprint, getPlatformDeviceName, getPlatformSessionToken } from './storage';
 import type {
   PlatformLicenseOrder,
   PlatformSubscriptionOrder,
@@ -17,10 +18,13 @@ export async function createPlatformLicenseOrder(payload: {
     {
       packageCode: payload.packageCode,
       channel: 'alipay',
+      sessionToken: getPlatformSessionToken(),
       customerName: payload.customerName,
       contact: payload.contact,
       inviteCode: payload.agentInviteCode || '',
       agentInviteCode: payload.agentInviteCode || '',
+      deviceFingerprint: getPlatformDeviceFingerprint(),
+      deviceName: getPlatformDeviceName(),
     }
   );
 }
@@ -52,6 +56,7 @@ export async function createPlatformSubscriptionOrder(payload: {
     {
       subscriptionCode: payload.subscriptionCode,
       channel: 'alipay',
+      sessionToken: getPlatformSessionToken(),
     }
   );
 }
@@ -72,6 +77,7 @@ export async function createPlatformTopupOrder(payload: {
       walletType: payload.walletType,
       amountCny: payload.amountCny,
       channel: 'alipay',
+      sessionToken: getPlatformSessionToken(),
     }
   );
 }
