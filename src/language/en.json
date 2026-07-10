@@ -192,4 +192,7 @@
   "cancel": "cancel",
   "cleanUp": "cleanUp",
   "mine": "Mine"
+  ,
+  "my_assets": "Assets",
+  "ai_assistant": "AI"
 }

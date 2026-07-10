@@ -1,22 +1,22 @@
 <script lang="ts" setup>
-// 左侧组件
-import importTmpl from '@/components/importTmpl.vue';
-import fontStyle from '@/components/fontStyle.vue';
-import myMaterial from '@/components/myMaterial/index.vue';
-import tools from '@/components/tools.vue';
-import material from '@/components/material.vue';
-import layer from '@/components/layer.vue';
-import { useI18n } from 'vue-i18n';
-// 路由
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
+
+import designerAiPanel from '@/components/designerAiPanel.vue';
+import fontStyle from '@/components/fontStyle.vue';
+import importTmpl from '@/components/importTmpl.vue';
+import layer from '@/components/layer.vue';
+import material from '@/components/material.vue';
+import myMaterial from '@/components/myMaterial/index.vue';
+import platformCenter from '@/components/platformCenter.vue';
+import tools from '@/components/tools.vue';
 
 const { t } = useI18n();
 
 const state = reactive({
-  menuActive: 1,
   toolsBarShow: true,
 });
-// 左侧菜单渲染
+
 const menuActive = ref('importTmpl');
 const leftBarComponent = {
   importTmpl,
@@ -24,61 +24,75 @@ const leftBarComponent = {
   material,
   fontStyle,
   layer,
+  designerAi: designerAiPanel,
   myMaterial,
+  mine: platformCenter,
+};
+const leftBarProps: Record<string, Record<string, unknown>> = {
+  designerAi: {
+    embedded: true,
+  },
+  mine: {
+    embedded: true,
+  },
 };
 
-// fix: 修复vue-i18n function "t" not reactive inside ref object
-// https://github.com/intlify/vue-i18n/issues/1396#issuecomment-1716123143
-const leftBar = reactive([
+const primaryLeftBar = reactive([
   {
-    //模板
     key: 'importTmpl',
     name: computed(() => t('templates')),
     icon: 'md-book',
   },
   {
-    //基础元素
     key: 'tools',
     name: computed(() => t('elements')),
     icon: 'md-images',
   },
   {
-    //字体样式
     key: 'fontStyle',
     name: computed(() => t('font_style')),
     icon: 'ios-pulse',
   },
   {
-    // 图片元素
     key: 'material',
     name: computed(() => t('material.cartoon')),
     icon: 'ios-leaf-outline',
   },
   {
-    // 图层
     key: 'layer',
     name: computed(() => t('layers')),
     icon: 'md-reorder',
   },
   {
-    // 用户素材
+    key: 'designerAi',
+    name: computed(() => t('ai_assistant')),
+    icon: 'ios-color-wand-outline',
+  },
+  {
     key: 'myMaterial',
+    name: computed(() => t('my_assets')),
+    icon: 'ios-images-outline',
+  },
+]);
+
+const secondaryLeftBar = reactive([
+  {
+    key: 'mine',
     name: computed(() => t('mine')),
     icon: 'ios-contact-outline',
   },
 ]);
-// 隐藏工具条
-const hideToolsBar = () => {
+
+function hideToolsBar() {
   state.toolsBarShow = !state.toolsBarShow;
-};
-// 展示工具条
-const showToolsBar = (val) => {
+}
+
+function showToolsBar(val: string) {
   menuActive.value = val;
   state.toolsBarShow = true;
-};
+}
 
 onMounted(() => {
-  // 有ID时，打开作品面板
   const route = useRoute();
   if (route?.query?.id) {
     menuActive.value = 'myMaterial';
@@ -88,22 +102,44 @@ onMounted(() => {
 
 <template>
   <div :class="`left-bar ${state.toolsBarShow && 'show-tools-bar'}`">
-    <!-- 左侧菜单 -->
-    <Menu :active-name="menuActive" accordion @on-select="showToolsBar" width="65px">
-      <MenuItem v-for="item in leftBar" :key="item.key" :name="item.key" class="menu-item">
-        <Icon :type="item.icon" size="24" />
-        <div>{{ item.name }}</div>
-      </MenuItem>
-    </Menu>
-    <!-- 左侧组件 -->
+    <div class="menu-shell">
+      <Menu :active-name="menuActive" accordion @on-select="showToolsBar" width="65px">
+        <MenuItem v-for="item in primaryLeftBar" :key="item.key" :name="item.key" class="menu-item">
+          <Icon :type="item.icon" size="24" />
+          <div>{{ item.name }}</div>
+        </MenuItem>
+      </Menu>
+
+      <Menu
+        :active-name="menuActive"
+        accordion
+        @on-select="showToolsBar"
+        width="65px"
+        class="menu-shell__footer"
+      >
+        <MenuItem
+          v-for="item in secondaryLeftBar"
+          :key="item.key"
+          :name="item.key"
+          class="menu-item"
+        >
+          <Icon :type="item.icon" size="24" />
+          <div>{{ item.name }}</div>
+        </MenuItem>
+      </Menu>
+    </div>
+
     <div class="content" v-show="state.toolsBarShow">
       <div class="left-panel">
         <KeepAlive>
-          <component :is="leftBarComponent[menuActive]"></component>
+          <component
+            :is="leftBarComponent[menuActive]"
+            v-bind="leftBarProps[menuActive] || {}"
+          ></component>
         </KeepAlive>
       </div>
     </div>
-    <!-- 关闭按钮 -->
+
     <div
       :class="`close-btn left-btn ${state.toolsBarShow && 'left-btn-open'}`"
       @click="hideToolsBar"
@@ -112,7 +148,6 @@ onMounted(() => {
 </template>
 
 <style lang="less" scoped>
-// 左侧容器
 .left-bar {
   width: 65px;
   height: 100%;
@@ -124,6 +159,23 @@ onMounted(() => {
     width: 380px;
   }
 }
+
+.menu-shell {
+  width: 65px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #eef2f8;
+}
+
+.menu-shell :deep(.ivu-menu) {
+  width: 65px !important;
+}
+
+.menu-shell__footer {
+  margin-top: auto;
+}
+
 .ivu-menu-vertical .menu-item {
   text-align: center;
   padding: 10px 2px;
@@ -134,6 +186,7 @@ onMounted(() => {
     margin: 0;
   }
 }
+
 .ivu-menu-light.ivu-menu-vertical .ivu-menu-item-active:not(.ivu-menu-submenu) {
   background: none;
 }
@@ -146,7 +199,10 @@ onMounted(() => {
   overflow-y: auto;
 }
 
-// 关闭按钮
+.left-panel {
+  min-height: 100%;
+}
+
 .close-btn {
   width: 20px;
   height: 64px;

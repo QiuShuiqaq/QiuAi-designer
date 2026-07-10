@@ -8,7 +8,7 @@
       <Divider type="vertical" />
       <import-file></import-file>
       <Divider type="vertical" />
-      <Button type="text" to="/template" target="_blank">鍏ㄩ儴妯℃澘</Button>
+      <Button type="text" to="/template" target="_blank">模板广场</Button>
       <Divider type="vertical" />
 
       <myTemplName></myTemplName>
@@ -21,25 +21,21 @@
 
     <div class="right">
       <previewCurrent />
-      <designerAiPanel />
       <save></save>
-      <platformCenter></platformCenter>
       <lang></lang>
     </div>
   </Header>
 </template>
 
 <script name="Top" setup lang="ts">
-import importJson from '@/components/importJSON.vue';
+import history from '@/components/history.vue';
 import importFile from '@/components/importFile.vue';
+import importJson from '@/components/importJSON.vue';
+import lang from '@/components/lang.vue';
 import logo from '@/components/logo.vue';
 import myTemplName from '@/components/myTemplName.vue';
 import previewCurrent from '@/components/previewCurrent';
 import save from '@/components/save.vue';
-import lang from '@/components/lang.vue';
-import history from '@/components/history.vue';
-import platformCenter from '@/components/platformCenter.vue';
-import designerAiPanel from '@/components/designerAiPanel.vue';
 
 const props = defineProps(['ruler']);
 const emit = defineEmits(['update:ruler']);
