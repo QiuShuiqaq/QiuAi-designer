@@ -37,12 +37,19 @@
         </div>
         <div class="designer-ai-content__overview-card">
           <span>当前选择</span>
-          <strong>{{ selectedSlots.length }} / {{ maxTargetsPerJob }}</strong>
-          <small>{{ enabledSlots.length }} 个图层可用</small>
+          <strong>{{ effectiveTargetCount }} / {{ maxTargetsPerJob }}</strong>
+          <small v-if="isDirectImageMode">已切换到当前图片直改</small>
+          <small v-else-if="selectedSlots.length">{{ enabledSlots.length }} 个图层可用</small>
+          <small v-else>{{ enabledSlots.length }} 个图层可用</small>
+        </div>
+        <div class="designer-ai-content__overview-card">
+          <span>背景模型</span>
+          <strong>{{ defaultImageModel }}</strong>
+          <small>{{ defaultImageSizeLabel }}</small>
         </div>
       </div>
 
-      <div class="designer-ai-content__summary">
+      <div v-if="!embedded" class="designer-ai-content__summary">
         <div class="designer-ai-content__summary-card">
           <span>模板</span>
           <strong>{{ templateId }}</strong>
@@ -53,11 +60,12 @@
         </div>
         <div class="designer-ai-content__summary-card">
           <span>可用目标</span>
-          <strong>{{ enabledSlots.length }}</strong>
+          <strong>{{ isDirectImageMode ? 1 : enabledSlots.length }}</strong>
         </div>
         <div class="designer-ai-content__summary-card">
-          <span>执行模式</span>
-          <strong>{{ capabilities?.mockEnabled ? 'Mock' : 'Provider' }}</strong>
+          <span>背景模型</span>
+          <strong>{{ defaultImageModel }}</strong>
+          <small>{{ defaultImageSizeLabel }}</small>
         </div>
       </div>
 
@@ -96,14 +104,30 @@
           <div class="designer-ai-content__agent">
             <Checkbox v-model="autoTargeting">自动识别目标图层</Checkbox>
             <span class="designer-ai-content__agent-tip">{{ agentTip }}</span>
-            <Button size="small" @click="applySuggestedTargets" :disabled="!enabledSlots.length">
+            <Button
+              size="small"
+              @click="applySuggestedTargets"
+              :disabled="!enabledSlots.length || isDirectImageMode"
+            >
               重新识别
             </Button>
           </div>
         </FormItem>
 
         <FormItem label="目标">
-          <div v-if="enabledSlots.length" class="designer-ai-content__targets">
+          <div
+            v-if="isDirectImageMode && directImageSelection"
+            class="designer-ai-content__direct-target"
+          >
+            <strong>{{ directImageSelection.label }}</strong>
+            <span>ID：{{ directImageSelection.id }}</span>
+            <span>
+              尺寸：{{ Math.round(directImageSelection.width) }} ×
+              {{ Math.round(directImageSelection.height) }}
+            </span>
+            <small>将直接替换当前图片图层内容，位置和尺寸保持不变。</small>
+          </div>
+          <div v-else-if="enabledSlots.length" class="designer-ai-content__targets">
             <label v-for="slot in enabledSlots" :key="slot.id" class="designer-ai-content__target">
               <Checkbox
                 :model-value="selectedSlotIds.includes(slot.id)"
@@ -117,8 +141,7 @@
           </div>
           <Alert v-else type="warning" show-icon>
             <template #desc>
-              当前画布没有可识别的 AI 图层。需要对象带有 `extensionType: "ai-slot"` 和
-              `extension.role` 才能使用。
+              当前画布没有可识别的 AI 图层。请先选择一个图片图层，或使用带 AI 图层定义的模板。
             </template>
           </Alert>
         </FormItem>
@@ -170,6 +193,8 @@ import { getPlatformActivationStatus } from '@/platform/session';
 import type {
   DesignerAiCapabilities,
   DesignerAiJob,
+  DesignerAiMode,
+  DesignerAiTargetRole,
   DesignerAiTemplateSlot,
   DesignerAiTemplateSlotsPayload,
   PlatformActivationStatus,
@@ -182,8 +207,18 @@ defineProps({
   },
 });
 
+type DirectImageSelection = {
+  id: string;
+  label: string;
+  role: DesignerAiTargetRole;
+  mode: DesignerAiMode;
+  width: number;
+  height: number;
+  sourceUrl: string;
+};
+
 const route = useRoute();
-const { canvasEditor } = useSelect();
+const { canvasEditor, getObjectAttr } = useSelect();
 
 const platformReady = isPlatformApiConfigured();
 const isLoading = ref(false);
@@ -200,6 +235,7 @@ const parsedSlots = ref<DesignerAiTemplateSlotsPayload | null>(null);
 const selectedSlotIds = ref<string[]>([]);
 const currentJob = ref<DesignerAiJob | null>(null);
 const activationStatus = ref<PlatformActivationStatus | null>(null);
+const directImageSelection = ref<DirectImageSelection | null>(null);
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -244,6 +280,26 @@ const maxTargetsPerJob = computed(() => Math.max(1, capabilities.value?.maxTarge
 const selectedSlots = computed(() =>
   enabledSlots.value.filter((slot) => selectedSlotIds.value.includes(slot.id))
 );
+const hasDirectImageSelection = computed(() => Boolean(directImageSelection.value));
+const isDirectImageMode = computed(() => hasDirectImageSelection.value);
+const effectiveTargetCount = computed(() => {
+  if (isDirectImageMode.value) {
+    return 1;
+  }
+  return selectedSlots.value.length;
+});
+const defaultImageModel = computed(() => {
+  return String(capabilities.value?.defaultImageModel || 'nano-banana-2').trim() || 'nano-banana-2';
+});
+const defaultImageSizeLabel = computed(() => {
+  const defaultSize = String(capabilities.value?.defaultImageSize || '2K').trim() || '2K';
+  const supportedSizes = Array.isArray(capabilities.value?.supportedImageSizes)
+    ? capabilities.value.supportedImageSizes.filter((item) => String(item || '').trim())
+    : [];
+  const sizesLabel = supportedSizes.length ? supportedSizes.join(' / ') : '1K / 2K / 4K';
+  const modeLabel = capabilities.value?.mockEnabled ? 'Mock' : 'Provider';
+  return `${defaultSize} 默认 · ${sizesLabel} · ${modeLabel}`;
+});
 const isActivated = computed(() => {
   return (
     activationStatus.value?.status === 'activated' &&
@@ -254,6 +310,10 @@ const isActivated = computed(() => {
 
 const agentSuggestion = computed(() => buildSuggestedTargets(enabledSlots.value, prompt.value));
 const agentTip = computed(() => {
+  if (directImageSelection.value) {
+    return `已选中图片图层：${directImageSelection.value.label}，生成结果将直接替换当前图片。`;
+  }
+
   if (!enabledSlots.value.length) {
     return '当前画布还没有可生成的 AI 图层。';
   }
@@ -270,7 +330,7 @@ const canSubmit = computed(() => {
     platformReady &&
       isActivated.value &&
       prompt.value.trim() &&
-      selectedSlots.value.length &&
+      (isDirectImageMode.value || selectedSlots.value.length) &&
       !isSubmitting.value &&
       !isPolling.value
   );
@@ -432,9 +492,114 @@ function formatErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function getActiveImageObject() {
+  const activeObject = canvasEditor.canvas?.getActiveObject?.() as
+    | ({
+        id?: string;
+        type?: string;
+        text?: string;
+        originSrc?: string;
+        getSrc?: () => string;
+        get?: (key: string) => unknown;
+      } & Record<string, unknown>)
+    | null;
+
+  if (!activeObject || activeObject.type !== 'image' || !activeObject.id) {
+    return null;
+  }
+
+  const sourceUrl =
+    String(activeObject.originSrc || '').trim() ||
+    String(activeObject.getSrc?.() || '').trim() ||
+    String(activeObject.get?.('src') || '').trim();
+
+  return {
+    id: String(activeObject.id),
+    label: String(activeObject.get?.('name') || activeObject.text || '图片').trim() || '图片',
+    role: 'product-image' as const,
+    mode: 'image-edit' as const,
+    width: Number(activeObject.get?.('width') || 0),
+    height: Number(activeObject.get?.('height') || 0),
+    sourceUrl,
+  };
+}
+
+function syncDirectImageSelection() {
+  directImageSelection.value = getActiveImageObject();
+}
+
+function buildDirectImageEditRequest(input: {
+  width: number;
+  height: number;
+  snapshot: {
+    meta?: Record<string, unknown>;
+    objects?: Array<Record<string, unknown>>;
+  };
+}) {
+  const selectedImage = directImageSelection.value;
+  if (!selectedImage) {
+    throw new Error('请先选择一个图片图层。');
+  }
+
+  const snapshotObjects = Array.isArray(input.snapshot.objects) ? input.snapshot.objects : [];
+  let matched = false;
+  const templateSnapshot = {
+    ...input.snapshot,
+    objects: snapshotObjects.map((item) => {
+      if (!item || item.id !== selectedImage.id) {
+        return item;
+      }
+
+      matched = true;
+      const extension = item.extension && typeof item.extension === 'object' ? item.extension : {};
+      return {
+        ...item,
+        src: selectedImage.sourceUrl || item.src,
+        originSrc: selectedImage.sourceUrl || item.originSrc || item.src,
+        extensionType: 'ai-slot',
+        extension: {
+          ...extension,
+          role: selectedImage.role,
+          slotName: selectedImage.label,
+          aiEnabled: true,
+          aiMode: selectedImage.mode,
+          editableAfterGenerate: true,
+          regenerateScope: 'self',
+          constraints: {
+            editableSource: 'selected-image',
+          },
+        },
+      };
+    }),
+  };
+
+  if (!matched) {
+    throw new Error('当前选中的图片图层未能写入 AI 请求，请重新选择后再试。');
+  }
+
+  return {
+    templateId: templateId.value || 'direct-image-edit',
+    language: language.value,
+    userPrompt: prompt.value.trim(),
+    targets: [
+      {
+        slotId: selectedImage.id,
+        role: selectedImage.role,
+        mode: selectedImage.mode,
+      },
+    ],
+    canvas: {
+      width: input.width,
+      height: input.height,
+    },
+    templateSnapshot,
+  };
+}
+
 async function refreshSlots() {
   errorMessage.value = '';
   infoMessage.value = '';
+  syncDirectImageSelection();
 
   try {
     const { snapshot } = getCanvasSnapshot();
@@ -447,7 +612,9 @@ async function refreshSlots() {
     syncSuggestedTargets(true);
 
     if (!nextParsedSlots.slots.length) {
-      infoMessage.value = '当前画布没有识别到 AI 图层。';
+      infoMessage.value = directImageSelection.value
+        ? '当前模板没有 AI 槽位，已切换为“当前图片直改”模式。'
+        : '当前画布没有识别到 AI 图层。请先选择一个图片图层，或使用带 AI 图层定义的模板。';
       return;
     }
 
@@ -553,23 +720,29 @@ async function submitJob() {
 
   try {
     const { width, height, snapshot } = getCanvasSnapshot();
-    const targets = selectedSlots.value.map((slot) => ({
-      slotId: slot.id,
-      role: slot.role,
-      mode: slot.aiMode,
-    }));
-
-    const response = await createDesignerAiJob({
-      templateId: templateId.value,
-      language: language.value,
-      userPrompt: prompt.value.trim(),
-      targets,
-      canvas: {
-        width,
-        height,
-      },
-      templateSnapshot: snapshot,
-    });
+    const response = await createDesignerAiJob(
+      isDirectImageMode.value
+        ? buildDirectImageEditRequest({
+            width,
+            height,
+            snapshot,
+          })
+        : {
+            templateId: templateId.value,
+            language: language.value,
+            userPrompt: prompt.value.trim(),
+            targets: selectedSlots.value.map((slot) => ({
+              slotId: slot.id,
+              role: slot.role,
+              mode: slot.aiMode,
+            })),
+            canvas: {
+              width,
+              height,
+            },
+            templateSnapshot: snapshot,
+          }
+    );
 
     currentJob.value = await getDesignerAiJob(response.jobId);
     await pollJob(response.jobId);
@@ -637,10 +810,14 @@ watch(
 );
 
 onMounted(() => {
+  getObjectAttr(syncDirectImageSelection);
+  canvasEditor.canvas?.on('object:modified', syncDirectImageSelection);
+  syncDirectImageSelection();
   bootstrap();
 });
 
 onBeforeUnmount(() => {
+  canvasEditor.canvas?.off('object:modified', syncDirectImageSelection);
   clearPolling();
 });
 </script>
@@ -678,6 +855,12 @@ onBeforeUnmount(() => {
 .designer-ai-content__body {
   position: relative;
   min-height: 260px;
+}
+
+.designer-ai-content--embedded .designer-ai-content__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .designer-ai-content__summary {
@@ -718,6 +901,7 @@ onBeforeUnmount(() => {
 
 .designer-ai-content__overview-card strong {
   color: #111827;
+  word-break: break-word;
 }
 
 .designer-ai-content__summary-card {
@@ -742,6 +926,10 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+
+.designer-ai-content--embedded .designer-ai-content__agent {
+  align-items: flex-start;
 }
 
 .designer-ai-content__presets {
@@ -787,6 +975,26 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.designer-ai-content__direct-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.designer-ai-content__direct-target strong {
+  color: #111827;
+}
+
+.designer-ai-content__direct-target span,
+.designer-ai-content__direct-target small {
+  color: #667085;
+  font-size: 12px;
+}
+
 .designer-ai-content__job {
   margin-top: 18px;
   padding: 14px 16px;
@@ -820,8 +1028,36 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.designer-ai-content--embedded .designer-ai-content__actions {
+  justify-content: stretch;
+  flex-direction: column;
+}
+
+.designer-ai-content--embedded .designer-ai-content__actions .ivu-btn {
+  width: 100%;
+}
+
 .designer-ai-content__empty {
   padding: 8px 0;
+}
+
+.designer-ai-content--embedded .designer-ai-content__overview,
+.designer-ai-content--embedded .designer-ai-content__summary,
+.designer-ai-content--embedded .designer-ai-content__targets {
+  grid-template-columns: 1fr;
+}
+
+.designer-ai-content--embedded .designer-ai-content__overview-card,
+.designer-ai-content--embedded .designer-ai-content__summary-card,
+.designer-ai-content--embedded .designer-ai-content__direct-target,
+.designer-ai-content--embedded .designer-ai-content__target,
+.designer-ai-content--embedded .designer-ai-content__job {
+  padding: 14px;
+}
+
+.designer-ai-content--embedded .designer-ai-content__job-meta {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 @media (max-width: 900px) {

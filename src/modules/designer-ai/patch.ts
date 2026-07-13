@@ -38,7 +38,10 @@ function getCanvas(editor: Editor) {
 }
 
 function findObjectById(canvas: fabric.Canvas, targetId: string) {
-  return canvas.getObjects().find((item: fabric.Object & { id?: string }) => item.id === targetId) || null;
+  return (
+    canvas.getObjects().find((item: fabric.Object & { id?: string }) => item.id === targetId) ||
+    null
+  );
 }
 
 function isTextboxObject(object: fabric.Object) {
@@ -62,50 +65,33 @@ async function applyReplaceImageAction(
     throw new Error('OBJECT_TYPE_NOT_SUPPORTED');
   }
 
-  const imageTarget = target as fabric.Image & { id?: string; extensionType?: string; extension?: unknown };
-  const objectIndex = canvas.getObjects().indexOf(target);
-  const preservedState = {
-    id: imageTarget.id,
-    left: imageTarget.left,
-    top: imageTarget.top,
-    width: imageTarget.width,
-    height: imageTarget.height,
-    scaleX: imageTarget.scaleX,
-    scaleY: imageTarget.scaleY,
-    angle: imageTarget.angle,
-    opacity: imageTarget.opacity,
-    flipX: imageTarget.flipX,
-    flipY: imageTarget.flipY,
-    originX: imageTarget.originX,
-    originY: imageTarget.originY,
-    selectable: imageTarget.selectable,
-    hasControls: imageTarget.hasControls,
-    evented: imageTarget.evented,
-    extensionType: imageTarget.extensionType,
-    extension: imageTarget.extension,
+  const imageTarget = target as fabric.Image & {
+    id?: string;
+    extensionType?: string;
+    extension?: unknown;
+    originSrc?: string;
   };
+  const width = imageTarget.get('width');
+  const height = imageTarget.get('height');
+  const scaleX = imageTarget.get('scaleX') || 1;
+  const scaleY = imageTarget.get('scaleY') || 1;
 
-  const nextImage = await new Promise<fabric.Image>((resolve, reject) => {
-    fabric.Image.fromURL(
+  await new Promise<void>((resolve) => {
+    imageTarget.setSrc(
       action.src,
-      (img) => {
-        if (!img) {
-          reject(new Error('IMAGE_LOAD_FAILED'));
-          return;
+      () => {
+        const nextWidth = imageTarget.get('width') || width || 1;
+        const nextHeight = imageTarget.get('height') || height || 1;
+        if (width && height) {
+          imageTarget.set('scaleX', (width * scaleX) / nextWidth);
+          imageTarget.set('scaleY', (height * scaleY) / nextHeight);
         }
-        resolve(img);
+        imageTarget.set('originSrc', action.src);
+        resolve();
       },
       { crossOrigin: 'anonymous' }
     );
   });
-
-  nextImage.set({
-    ...preservedState,
-    src: action.src,
-  });
-
-  canvas.remove(target);
-  canvas.insertAt(nextImage, objectIndex, false);
 }
 
 async function applyUpdateTextAction(
@@ -133,20 +119,20 @@ async function applyUpdateStyleAction(
     throw new Error('OBJECT_NOT_FOUND');
   }
 
-  const nextProps = Object.entries(action.props || {}).reduce<Record<string, unknown>>((acc, [key, value]) => {
-    if (STYLE_WHITELIST.has(key)) {
-      acc[key] = value;
-    }
-    return acc;
-  }, {});
+  const nextProps = Object.entries(action.props || {}).reduce<Record<string, unknown>>(
+    (acc, [key, value]) => {
+      if (STYLE_WHITELIST.has(key)) {
+        acc[key] = value;
+      }
+      return acc;
+    },
+    {}
+  );
 
   target.set(nextProps);
 }
 
-async function applyAddObjectAction(
-  canvas: fabric.Canvas,
-  action: DesignerAiPatchAddObjectAction
-) {
+async function applyAddObjectAction(canvas: fabric.Canvas, action: DesignerAiPatchAddObjectAction) {
   const objectPayload = {
     ...action.object,
   };
@@ -215,7 +201,10 @@ async function applySingleAction(canvas: fabric.Canvas, action: DesignerAiPatchA
   await applyRemoveObjectAction(canvas, action);
 }
 
-export async function applyDesignerAiPatch(editor: Editor, patch: DesignerAiPatch): Promise<DesignerAiPatchApplyResult> {
+export async function applyDesignerAiPatch(
+  editor: Editor,
+  patch: DesignerAiPatch
+): Promise<DesignerAiPatchApplyResult> {
   const canvas = getCanvas(editor);
   if (!canvas) {
     throw new Error('CANVAS_NOT_READY');

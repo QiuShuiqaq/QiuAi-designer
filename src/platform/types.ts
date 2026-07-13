@@ -267,6 +267,9 @@ export interface DesignerAiCapabilities {
   textTargets: string[];
   maxTargetsPerJob: number;
   supportedLanguages: string[];
+  supportedImageSizes?: string[];
+  defaultImageModel?: string;
+  defaultImageSize?: string;
   patchVersion: 1;
   mockEnabled: boolean;
 }
