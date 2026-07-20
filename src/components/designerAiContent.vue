@@ -93,7 +93,13 @@ import {
   getDesignerAiJob,
   parseDesignerAiTemplateSlots,
 } from '@/platform/designer-ai';
-import { getPlatformActivationStatus } from '@/platform/session';
+import { activatePlatformLicense, getPlatformActivationStatus } from '@/platform/session';
+import {
+  getPlatformSessionToken,
+  onPlatformSessionTokenChange,
+  getStoredPlatformProfile,
+  setPlatformSessionToken,
+} from '@/platform/storage';
 import type {
   DesignerAiCapabilities,
   DesignerAiJob,
@@ -152,6 +158,8 @@ const messagesRef = ref<HTMLElement | null>(null);
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let stopPanelActionListener: (() => void) | null = null;
+let stopSessionListener: (() => void) | null = null;
+let restoringActivation = false;
 
 const supportedLanguages = computed(() => {
   if (capabilities.value?.supportedLanguages?.length) {
@@ -342,6 +350,41 @@ function buildSuggestedTargets(nextSlots: DesignerAiTemplateSlot[], promptValue:
 
 async function loadActivationStatus() {
   activationStatus.value = await getPlatformActivationStatus();
+  if (activationStatus.value?.sessionToken) {
+    const currentToken = getPlatformSessionToken();
+    if (currentToken !== activationStatus.value.sessionToken) {
+      setPlatformSessionToken(activationStatus.value.sessionToken);
+    }
+  }
+}
+
+async function restoreActivationIfNeeded() {
+  if (restoringActivation) {
+    return;
+  }
+
+  if (activationStatus.value?.status !== 'not_logged_in') {
+    return;
+  }
+
+  const storedProfile = getStoredPlatformProfile();
+  if (!storedProfile.customerName.trim() || !storedProfile.contact.trim()) {
+    return;
+  }
+
+  restoringActivation = true;
+  try {
+    activationStatus.value = await activatePlatformLicense({
+      customerName: storedProfile.customerName,
+      contact: storedProfile.contact,
+      agentInviteCode: storedProfile.agentInviteCode,
+    });
+  } catch (error) {
+    errorMessage.value = formatErrorMessage(error, '自动恢复授权失败');
+    appendConversationEntry('error', '错误', errorMessage.value);
+  } finally {
+    restoringActivation = false;
+  }
 }
 
 async function loadCapabilities() {
@@ -678,6 +721,7 @@ async function bootstrap() {
 
   try {
     await loadActivationStatus();
+    await restoreActivationIfNeeded();
     await loadCapabilities();
     await refreshSlots();
   } catch (error) {
@@ -700,6 +744,18 @@ onMounted(() => {
   getObjectAttr(syncDirectImageSelection);
   canvasEditor.canvas?.on('object:modified', syncDirectImageSelection);
   stopPanelActionListener = onDesignerAiPanelAction(handleDesignerAiPanelAction);
+  stopSessionListener = onPlatformSessionTokenChange(() => {
+    void loadActivationStatus()
+      .then(() => {
+        if (activationStatus.value?.status === 'not_logged_in') {
+          return restoreActivationIfNeeded();
+        }
+        return undefined;
+      })
+      .catch((error) => {
+        errorMessage.value = formatErrorMessage(error, '同步激活状态失败');
+      });
+  });
   syncDirectImageSelection();
   bootstrap();
 });
@@ -708,6 +764,8 @@ onBeforeUnmount(() => {
   canvasEditor.canvas?.off('object:modified', syncDirectImageSelection);
   stopPanelActionListener?.();
   stopPanelActionListener = null;
+  stopSessionListener?.();
+  stopSessionListener = null;
   clearPolling();
 });
 </script>
