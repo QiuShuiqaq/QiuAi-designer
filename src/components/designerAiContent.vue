@@ -40,6 +40,61 @@
               任务 ID：{{ currentJob.jobId }} · 更新时间：{{ formatTime(currentJob.updatedAt) }}
             </span>
           </div>
+
+          <div v-if="lastAssistantTurn" class="designer-ai-content__assistant-summary">
+            <div class="designer-ai-content__assistant-summary-head">
+              <Tag :color="assistantModeColor(lastAssistantTurn.mode)">
+                {{ formatAssistantMode(lastAssistantTurn.mode) }}
+              </Tag>
+              <span>置信度 {{ Math.round(lastAssistantTurn.confidence * 100) }}%</span>
+              <Tag v-if="lastAssistantTurn.needsConfirmation" color="warning">需确认</Tag>
+              <Tag v-if="lastAssistantTurn.jobIds?.length" color="success">已派单</Tag>
+            </div>
+
+            <p class="designer-ai-content__assistant-summary-reply">
+              {{ lastAssistantTurn.reply }}
+            </p>
+
+            <div
+              v-if="lastAssistantTurn.toolCalls.length"
+              class="designer-ai-content__assistant-summary-block"
+            >
+              <strong>工具调用</strong>
+              <div
+                v-for="(toolCall, index) in lastAssistantTurn.toolCalls"
+                :key="`${toolCall.type}-${index}`"
+                class="designer-ai-content__assistant-summary-line"
+              >
+                {{ formatToolCall(toolCall) }}
+              </div>
+            </div>
+
+            <div
+              v-if="lastAssistantTurn.designPlan"
+              class="designer-ai-content__assistant-summary-block"
+            >
+              <strong>设计计划</strong>
+              <div class="designer-ai-content__assistant-summary-line">
+                方案状态：{{
+                  lastAssistantTurn.designPlan.review.status === 'passed' ? '通过' : '需留意'
+                }}
+              </div>
+              <div
+                v-for="layer in lastAssistantTurn.designPlan.layers"
+                :key="layer.id"
+                class="designer-ai-content__assistant-summary-line"
+              >
+                {{ layer.label }} · {{ layer.role }} · {{ layer.generationMode }}
+              </div>
+              <div
+                v-for="(note, index) in lastAssistantTurn.designPlan.review.notes"
+                :key="`note-${index}`"
+                class="designer-ai-content__assistant-summary-note"
+              >
+                {{ note }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="designer-ai-content__composer">
@@ -88,11 +143,11 @@ import type { DesignerAiQuickActionDetail } from '@/modules/designer-ai/quick-ac
 import { isPlatformApiConfigured } from '@/platform/config';
 import {
   cancelDesignerAiJob,
-  createDesignerAiJob,
   getDesignerAiCapabilities,
   getDesignerAiJob,
   parseDesignerAiTemplateSlots,
 } from '@/platform/designer-ai';
+import { createDesignerAssistantTurn } from '@/platform/designer-assistant';
 import { activatePlatformLicense, getPlatformActivationStatus } from '@/platform/session';
 import {
   getPlatformSessionToken,
@@ -107,6 +162,7 @@ import type {
   DesignerAiTargetRole,
   DesignerAiTemplateSlot,
   DesignerAiTemplateSlotsPayload,
+  DesignerAssistantTurnResponse,
   PlatformActivationStatus,
 } from '@/platform/types';
 
@@ -151,6 +207,7 @@ const language = ref('zh-CN');
 const capabilities = ref<DesignerAiCapabilities | null>(null);
 const parsedSlots = ref<DesignerAiTemplateSlotsPayload | null>(null);
 const currentJob = ref<DesignerAiJob | null>(null);
+const lastAssistantTurn = ref<DesignerAssistantTurnResponse | null>(null);
 const activationStatus = ref<PlatformActivationStatus | null>(null);
 const directImageSelection = ref<DirectImageSelection | null>(null);
 const conversationMessages = ref<DesignerAiConversationMessage[]>([]);
@@ -191,7 +248,6 @@ const canSubmit = computed(() => {
     platformReady &&
       isActivated.value &&
       prompt.value.trim() &&
-      (isDirectImageMode.value || enabledSlots.value.length) &&
       !isSubmitting.value &&
       !isPolling.value
   );
@@ -209,6 +265,35 @@ const jobStatusColor = computed(() => {
   if (status === 'failed' || status === 'cancelled') return 'error';
   return 'primary';
 });
+
+function formatAssistantMode(mode: string) {
+  if (mode === 'quick_image') return '单图生成';
+  if (mode === 'layered_design') return '多图层设计';
+  if (mode === 'layer_edit') return '图层编辑';
+  return '聊天回答';
+}
+
+function assistantModeColor(mode: string) {
+  if (mode === 'quick_image') return 'success';
+  if (mode === 'layered_design') return 'warning';
+  if (mode === 'layer_edit') return 'error';
+  return 'primary';
+}
+
+function formatToolCall(toolCall: DesignerAssistantTurnResponse['toolCalls'][number]) {
+  if (toolCall.type === 'generate_image') {
+    return `生成图像 · ${toolCall.model}${toolCall.targetRole ? ` · ${toolCall.targetRole}` : ''}`;
+  }
+
+  if (toolCall.type === 'revise_layer') {
+    return `重绘图层 · ${toolCall.layerId}`;
+  }
+
+  const targetRoles = Array.isArray(toolCall.brief.targetRoles)
+    ? toolCall.brief.targetRoles.join('、')
+    : '';
+  return `图层规划${targetRoles ? ` · ${targetRoles}` : ''}`;
+}
 
 function clearPolling() {
   if (pollingTimer) {
@@ -242,6 +327,7 @@ async function clearConversation() {
   conversationMessages.value = [
     createConversationMessage('assistant', 'AI', '请直接描述你的需求。'),
   ];
+  lastAssistantTurn.value = null;
   prompt.value = '';
   await nextTick();
   scrollMessagesToBottom();
@@ -465,6 +551,7 @@ function syncDirectImageSelection() {
 function buildDirectImageEditRequest(input: {
   width: number;
   height: number;
+  conversationHistory?: DesignerAiConversationMessage[];
   snapshot: {
     meta?: Record<string, unknown>;
     objects?: Array<Record<string, unknown>>;
@@ -512,14 +599,21 @@ function buildDirectImageEditRequest(input: {
   }
 
   return {
+    conversationId: templateId.value || 'local-current',
     templateId: templateId.value || 'direct-image-edit',
     language: language.value,
-    userPrompt: prompt.value.trim(),
+    message: prompt.value.trim(),
+    conversationHistory: (input.conversationHistory || conversationMessages.value).slice(-12),
+    selection: {
+      objectId: selectedImage.id,
+      objectType: 'image',
+    },
     targets: [
       {
         slotId: selectedImage.id,
         role: selectedImage.role,
         mode: selectedImage.mode,
+        targetSource: 'selected-layer',
       },
     ],
     canvas: {
@@ -527,6 +621,11 @@ function buildDirectImageEditRequest(input: {
       height: input.height,
     },
     templateSnapshot,
+    clientRequestId: uuidv4(),
+    actionKey: 'image-edit',
+    actionCategory: 'edit',
+    preserveLayout: true,
+    candidateCount: 1,
   };
 }
 
@@ -636,41 +735,60 @@ async function submitJob() {
   }
 
   const userPrompt = prompt.value.trim();
+  const conversationHistory = conversationMessages.value.slice(-12);
   isSubmitting.value = true;
   errorMessage.value = '';
 
   appendConversationEntry('user', '你', userPrompt);
-  appendConversationEntry('assistant', 'AI', '收到，开始生成。');
 
   try {
     const { width, height, snapshot } = getCanvasSnapshot();
-    const response = await createDesignerAiJob(
+    const response = await createDesignerAssistantTurn(
       isDirectImageMode.value
         ? buildDirectImageEditRequest({
             width,
             height,
+            conversationHistory,
             snapshot,
           })
         : {
+            conversationId: templateId.value || 'local-current',
             templateId: templateId.value,
             language: language.value,
-            userPrompt,
+            message: userPrompt,
+            conversationHistory,
+            selection: directImageSelection.value
+              ? {
+                  objectId: directImageSelection.value.id,
+                  objectType: 'image',
+                }
+              : null,
             targets: buildSuggestedTargets(enabledSlots.value, userPrompt).slots.map((slot) => ({
               slotId: slot.id,
               role: slot.role,
               mode: slot.aiMode,
+              targetSource: 'ai-slot',
             })),
             canvas: {
               width,
               height,
             },
             templateSnapshot: snapshot,
+            clientRequestId: uuidv4(),
+            actionKey: '',
+            actionCategory: 'edit',
+            preserveLayout: true,
+            candidateCount: 1,
           }
     );
 
-    currentJob.value = await getDesignerAiJob(response.jobId);
-    appendConversationEntry('assistant', 'AI', `任务已提交，ID：${response.jobId}`);
-    await pollJob(response.jobId);
+    lastAssistantTurn.value = response;
+    appendConversationEntry('assistant', 'AI', response.reply || '收到。');
+
+    if (response.jobIds?.[0]) {
+      currentJob.value = await getDesignerAiJob(response.jobIds[0]);
+      await pollJob(response.jobIds[0]);
+    }
   } catch (error) {
     errorMessage.value = formatErrorMessage(error, '任务创建失败');
     appendConversationEntry('error', '错误', errorMessage.value);

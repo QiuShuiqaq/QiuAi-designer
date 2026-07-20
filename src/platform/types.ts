@@ -218,6 +218,98 @@ export interface DesignerAiTemplateSlotsPayload {
   slots: DesignerAiTemplateSlot[];
 }
 
+export type DesignerAssistantConversationRole = 'assistant' | 'user' | 'error';
+
+export interface DesignerAssistantConversationMessage {
+  id?: string;
+  role: DesignerAssistantConversationRole;
+  title?: string;
+  content: string;
+  createdAt?: string;
+}
+
+export type DesignerAssistantMode = 'chat' | 'quick_image' | 'layered_design' | 'layer_edit';
+
+export type DesignerAssistantToolCall =
+  | {
+      type: 'generate_image';
+      model: 'nano-banana-2';
+      prompt: string;
+      targetRole?: DesignerAiTargetRole;
+    }
+  | {
+      type: 'plan_layers';
+      brief: Record<string, unknown>;
+    }
+  | {
+      type: 'revise_layer';
+      layerId: string;
+      instruction: string;
+    };
+
+export interface DesignerAssistantDesignLayer {
+  id: string;
+  slotId: string;
+  role: DesignerAiTargetRole;
+  type: 'background' | 'image' | 'text' | 'shape' | 'decoration';
+  editable: boolean;
+  generationMode: 'image' | 'text' | 'edit';
+  label: string;
+  prompt: string;
+}
+
+export interface DesignerAssistantDesignPlan {
+  objective: string;
+  layers: DesignerAssistantDesignLayer[];
+  review: {
+    status: 'passed' | 'needs_attention';
+    notes: string[];
+  };
+}
+
+export interface DesignerAssistantTurnRequest {
+  conversationId: string;
+  templateId: string;
+  message: string;
+  language: string;
+  conversationHistory?: DesignerAssistantConversationMessage[];
+  canvas: {
+    width: number;
+    height: number;
+  };
+  templateSnapshot: DesignerAiTemplateSnapshot;
+  selection?: {
+    objectId: string;
+    objectType: string;
+  } | null;
+  targets?: Array<{
+    slotId: string;
+    role: DesignerAiTargetRole;
+    mode: DesignerAiMode;
+    targetSource?: 'ai-slot' | 'selected-layer';
+  }>;
+  clientRequestId?: string;
+  actionKey?: string;
+  actionCategory?: DesignerAiActionCategory;
+  preserveLayout?: boolean;
+  candidateCount?: number;
+}
+
+export interface DesignerAssistantTurnResponse {
+  conversationId?: string;
+  mode: DesignerAssistantMode;
+  reply: string;
+  confidence: number;
+  needsConfirmation: boolean;
+  toolCalls: DesignerAssistantToolCall[];
+  designPlan?: DesignerAssistantDesignPlan;
+  jobIds?: string[];
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
 export interface DesignerAiPatchReplaceImageAction {
   type: 'replace-image-src';
   targetId: string;
