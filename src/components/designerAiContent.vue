@@ -234,7 +234,13 @@ const slots = computed(() => parsedSlots.value?.slots || []);
 const enabledSlots = computed(() => slots.value.filter((slot) => slot.aiEnabled));
 const maxTargetsPerJob = computed(() => Math.max(1, capabilities.value?.maxTargetsPerJob || 4));
 const hasDirectImageSelection = computed(() => Boolean(directImageSelection.value));
-const isDirectImageMode = computed(() => hasDirectImageSelection.value);
+const isDirectImageMode = computed(() => {
+  if (!hasDirectImageSelection.value) {
+    return false;
+  }
+
+  return shouldUseDirectImageMode(prompt.value);
+});
 const isActivated = computed(() => {
   return (
     activationStatus.value?.status === 'activated' &&
@@ -544,8 +550,59 @@ function getActiveImageObject() {
   };
 }
 
+function getActiveCanvasSelection() {
+  const activeObject = canvasEditor.canvas?.getActiveObject?.() as {
+    id?: string;
+    type?: string;
+  } | null;
+
+  if (!activeObject || !activeObject.id || activeObject.id === 'workspace') {
+    return null;
+  }
+
+  return {
+    objectId: String(activeObject.id),
+    objectType: String(activeObject.type || 'object'),
+  };
+}
+
 function syncDirectImageSelection() {
   directImageSelection.value = getActiveImageObject();
+}
+
+function shouldUseDirectImageMode(promptValue: string) {
+  const normalizedPrompt = String(promptValue || '').trim();
+  if (!normalizedPrompt) {
+    return false;
+  }
+
+  const keywords = [
+    '换背景',
+    '背景',
+    '场景',
+    '模特',
+    '抠图',
+    '去除',
+    '删除',
+    '替换',
+    '换成',
+    '改成',
+    '重绘',
+    '修图',
+    '调色',
+    '配色',
+    '材质',
+    '清理',
+    '裁切',
+    '裁剪',
+    '透明',
+    '去掉',
+    '局部重绘',
+    '擦除',
+    '补全',
+  ];
+
+  return keywords.some((keyword) => normalizedPrompt.includes(keyword));
 }
 
 function buildDirectImageEditRequest(input: {
@@ -757,17 +814,12 @@ async function submitJob() {
             language: language.value,
             message: userPrompt,
             conversationHistory,
-            selection: directImageSelection.value
-              ? {
-                  objectId: directImageSelection.value.id,
-                  objectType: 'image',
-                }
-              : null,
+            selection: getActiveCanvasSelection(),
             targets: buildSuggestedTargets(enabledSlots.value, userPrompt).slots.map((slot) => ({
               slotId: slot.id,
               role: slot.role,
               mode: slot.aiMode,
-              targetSource: 'ai-slot',
+              targetSource: 'ai-slot' as const,
             })),
             canvas: {
               width,
