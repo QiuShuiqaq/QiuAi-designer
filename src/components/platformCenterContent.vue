@@ -61,7 +61,7 @@
         </div>
       </div>
 
-      <div class="platform-center-content__summary">
+      <div v-if="!embedded" class="platform-center-content__summary">
         <div class="platform-center-content__summary-card">
           <span>产品</span>
           <strong>{{ productMeta?.productName || 'QiuAi Designer' }}</strong>
@@ -415,7 +415,10 @@ import {
   getPlatformDeviceFingerprint,
   getPlatformDeviceName,
   getStoredPlatformProfile,
+  getPlatformSessionToken,
+  onPlatformSessionTokenChange,
   saveStoredPlatformProfile,
+  setPlatformSessionToken,
 } from '@/platform/storage';
 import { listPlatformSubscriptionPackages } from '@/platform/subscriptions';
 import { getPlatformWalletSummary } from '@/platform/wallet';
@@ -466,6 +469,9 @@ const currentLicenseOrder = ref<PlatformLicenseOrder | null>(null);
 const currentSubscriptionOrder = ref<PlatformSubscriptionOrder | null>(null);
 const currentTopupOrder = ref<PlatformTopupOrder | null>(null);
 const activeTab = ref<'license' | 'wallet' | 'purchase'>('license');
+let restoringActivation = false;
+let stopSessionListener: (() => void) | null = null;
+let allowSilentRestore = true;
 
 const storedProfile = getStoredPlatformProfile();
 const activationForm = reactive({
@@ -628,9 +634,46 @@ async function loadProductMeta() {
 async function loadActivationStatus() {
   activationStatus.value = await getPlatformActivationStatus();
   if (activationStatus.value?.sessionToken) {
-    walletSummary.value = activationStatus.value.walletSummary || null;
+    const currentToken = getPlatformSessionToken();
+    if (currentToken !== activationStatus.value.sessionToken) {
+      setPlatformSessionToken(activationStatus.value.sessionToken);
+    }
   }
+  walletSummary.value = activationStatus.value?.walletSummary || null;
   emitTriggerState();
+}
+
+async function restoreActivationIfNeeded() {
+  if (restoringActivation) {
+    return;
+  }
+
+  if (activationStatus.value?.status !== 'not_logged_in') {
+    return;
+  }
+
+  if (!allowSilentRestore) {
+    return;
+  }
+
+  if (!activationForm.customerName.trim() || !activationForm.contact.trim()) {
+    return;
+  }
+
+  restoringActivation = true;
+  try {
+    activationStatus.value = await activatePlatformLicense({
+      customerName: activationForm.customerName.trim(),
+      contact: activationForm.contact.trim(),
+      agentInviteCode: activationForm.agentInviteCode.trim(),
+    });
+    walletSummary.value = activationStatus.value?.walletSummary || null;
+    emitTriggerState();
+  } catch {
+    // Keep the original state if silent restore fails.
+  } finally {
+    restoringActivation = false;
+  }
 }
 
 async function loadSoftwarePackages() {
@@ -661,6 +704,7 @@ async function refreshAll() {
 
   try {
     await Promise.all([loadProductMeta(), loadActivationStatus()]);
+    await restoreActivationIfNeeded();
     await Promise.all([loadSoftwarePackages(), loadSubscriptionPackages(), loadWalletSummary()]);
     persistProfile();
   } catch (error) {
@@ -726,6 +770,7 @@ async function verifyAgentCode() {
 }
 
 function clearSession() {
+  allowSilentRestore = false;
   clearPlatformSession();
   activationStatus.value = null;
   walletSummary.value = null;
@@ -889,8 +934,21 @@ async function refreshTopupOrder() {
 }
 
 onMounted(() => {
+  allowSilentRestore = true;
+  stopSessionListener = onPlatformSessionTokenChange(() => {
+    void loadActivationStatus().then(() => {
+      if (activationStatus.value?.status === 'not_logged_in') {
+        void restoreActivationIfNeeded();
+      }
+    });
+  });
   emitTriggerState();
   refreshAll();
+});
+
+onBeforeUnmount(() => {
+  stopSessionListener?.();
+  stopSessionListener = null;
 });
 </script>
 
@@ -927,6 +985,12 @@ onMounted(() => {
 .platform-center-content__body {
   position: relative;
   min-height: 320px;
+}
+
+.platform-center-content--embedded .platform-center-content__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .platform-center-content__empty {
@@ -980,6 +1044,7 @@ onMounted(() => {
 
 .platform-center-content__overview-card strong {
   color: #111827;
+  word-break: break-word;
 }
 
 .platform-center-content__overview-card--primary {
@@ -1084,6 +1149,7 @@ onMounted(() => {
 .platform-center-content__kv strong {
   color: #111827;
   text-align: right;
+  word-break: break-word;
 }
 
 .platform-center-content__panel-actions {
@@ -1180,6 +1246,35 @@ onMounted(() => {
   gap: 12px;
   color: #667085;
   font-size: 12px;
+}
+
+.platform-center-content--embedded .platform-center-content__overview-grid,
+.platform-center-content--embedded .platform-center-content__grid,
+.platform-center-content--embedded .platform-center-content__wallet,
+.platform-center-content--embedded .platform-center-content__package-grid,
+.platform-center-content--embedded .platform-center-content__order-grid,
+.platform-center-content--embedded .platform-center-content__summary,
+.platform-center-content--embedded .platform-center-content__inline-form,
+.platform-center-content--embedded .platform-center-content__agent-row {
+  grid-template-columns: 1fr;
+}
+
+.platform-center-content--embedded .platform-center-content__panel,
+.platform-center-content--embedded .platform-center-content__wallet-card,
+.platform-center-content--embedded .platform-center-content__package-card,
+.platform-center-content--embedded .platform-center-content__order-card,
+.platform-center-content--embedded .platform-center-content__overview-card {
+  padding: 14px;
+}
+
+.platform-center-content--embedded .platform-center-content__kv {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.platform-center-content--embedded .platform-center-content__kv strong {
+  text-align: left;
 }
 
 @media (max-width: 980px) {

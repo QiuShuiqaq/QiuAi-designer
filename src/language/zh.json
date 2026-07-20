@@ -259,8 +259,7 @@
     "addTemplCheckTip": "模板名称不能为空"
   },
   "mine": "我的",
-  "batch": "批量"
-  ,
-  "my_assets": "鎴戠殑绱犳潗",
+  "batch": "批量",
+  "my_assets": "我的素材",
   "ai_assistant": "AI"
 }

@@ -10,8 +10,13 @@ import material from '@/components/material.vue';
 import myMaterial from '@/components/myMaterial/index.vue';
 import platformCenter from '@/components/platformCenter.vue';
 import tools from '@/components/tools.vue';
+import {
+  applyDesignerAiPanelAction,
+  onDesignerAiQuickActionRequest,
+} from '@/modules/designer-ai/quick-actions';
 
 const { t } = useI18n();
+const route = useRoute();
 
 const state = reactive({
   toolsBarShow: true,
@@ -92,11 +97,24 @@ function showToolsBar(val: string) {
   state.toolsBarShow = true;
 }
 
+let stopDesignerAiQuickActionListener: (() => void) | null = null;
+
 onMounted(() => {
-  const route = useRoute();
   if (route?.query?.id) {
     menuActive.value = 'myMaterial';
   }
+
+  stopDesignerAiQuickActionListener = onDesignerAiQuickActionRequest(async (detail) => {
+    menuActive.value = 'designerAi';
+    state.toolsBarShow = true;
+    await nextTick();
+    applyDesignerAiPanelAction(detail);
+  });
+});
+
+onBeforeUnmount(() => {
+  stopDesignerAiQuickActionListener?.();
+  stopDesignerAiQuickActionListener = null;
 });
 </script>
 
@@ -196,11 +214,13 @@ onMounted(() => {
   width: 220px;
   padding: 0 10px;
   height: 100%;
+  min-height: 0;
   overflow-y: auto;
 }
 
 .left-panel {
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .close-btn {

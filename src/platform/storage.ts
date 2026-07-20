@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 const SESSION_TOKEN_KEY = 'qiuai-designer.platform.session-token';
 const DEVICE_FINGERPRINT_KEY = 'qiuai-designer.platform.device-fingerprint';
 const PROFILE_KEY = 'qiuai-designer.platform.profile';
+const SESSION_CHANGE_EVENT = 'qiuai-designer.platform-session-changed';
 
 export interface StoredPlatformProfile {
   customerName: string;
@@ -12,6 +13,24 @@ export interface StoredPlatformProfile {
 
 function canUseStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function notifySessionTokenChange() {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(SESSION_CHANGE_EVENT));
+}
+
+export function onPlatformSessionTokenChange(handler: () => void) {
+  if (!canUseStorage()) {
+    return () => {};
+  }
+
+  const listener = () => handler();
+  window.addEventListener(SESSION_CHANGE_EVENT, listener);
+  return () => window.removeEventListener(SESSION_CHANGE_EVENT, listener);
 }
 
 export function getPlatformSessionToken() {
@@ -28,6 +47,7 @@ export function setPlatformSessionToken(sessionToken: string) {
   }
 
   window.localStorage.setItem(SESSION_TOKEN_KEY, String(sessionToken || '').trim());
+  notifySessionTokenChange();
 }
 
 export function clearPlatformSessionToken() {
@@ -36,6 +56,7 @@ export function clearPlatformSessionToken() {
   }
 
   window.localStorage.removeItem(SESSION_TOKEN_KEY);
+  notifySessionTokenChange();
 }
 
 export function getPlatformDeviceFingerprint() {

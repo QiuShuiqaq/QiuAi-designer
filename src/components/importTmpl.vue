@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="template-panel">
     <div class="search-box">
       <Select
         v-model="typeValue"
@@ -21,32 +21,29 @@
       />
     </div>
 
-    <div id="myTemplBox" class="scroll-box">
-      <Scroll
-        v-if="showScroll"
-        key="template-scroll"
-        :on-reach-bottom="nextPage"
-        :height="scrollHeight"
-        :distance-to-edge="[-1, -1]"
-      >
-        <div class="list-box">
-          <Tooltip v-for="info in pageData" :key="info.id" :content="info.name" placement="top">
-            <div class="tmpl-img-box">
-              <Image
-                lazy
-                :src="info.previewSrc"
-                :alt="info.name"
-                fit="contain"
-                height="100%"
-                @click="beforeClearTip(info)"
-              />
-            </div>
-          </Tooltip>
-        </div>
+    <div
+      id="myTemplBox"
+      ref="scrollBoxRef"
+      class="scroll-box"
+      @scroll.passive="handleTemplateScroll"
+    >
+      <div class="list-box">
+        <Tooltip v-for="info in pageData" :key="info.id" :content="info.name" placement="top">
+          <div class="tmpl-img-box">
+            <Image
+              lazy
+              :src="info.previewSrc"
+              :alt="info.name"
+              fit="contain"
+              width="100%"
+              @click="beforeClearTip(info)"
+            />
+          </div>
+        </Tooltip>
+      </div>
 
-        <Spin size="large" fix :show="pageLoading"></Spin>
-        <Divider v-if="isDownBottom" plain>已经到底了</Divider>
-      </Scroll>
+      <Spin size="large" fix :show="pageLoading"></Spin>
+      <Divider v-if="isDownBottom" plain>已经到底了</Divider>
     </div>
   </div>
 </template>
@@ -81,8 +78,7 @@ const pagination = reactive({
   pageCount: 1,
   pageSize: 12,
 });
-const scrollHeight = ref(0);
-const showScroll = ref(false);
+const scrollBoxRef = ref<HTMLElement | null>(null);
 
 const typeText = computed(() => {
   const current = typeList.value.find((item) => item.value === typeValue.value);
@@ -112,6 +108,10 @@ async function reloadTemplates(reset = false) {
 async function startGetList() {
   page.value = 1;
   await reloadTemplates(true);
+  await nextTick();
+  if (scrollBoxRef.value) {
+    scrollBoxRef.value.scrollTop = 0;
+  }
 }
 
 async function nextPage() {
@@ -120,6 +120,18 @@ async function nextPage() {
   }
   page.value += 1;
   await reloadTemplates(false);
+}
+
+function handleTemplateScroll(event: Event) {
+  const target = event.currentTarget as HTMLElement | null;
+  if (!target || pageLoading.value || isDownBottom.value) {
+    return;
+  }
+
+  const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+  if (distanceToBottom <= 96) {
+    void nextPage();
+  }
 }
 
 const handleFilterChange = debounce(() => {
@@ -173,12 +185,6 @@ async function loadInitialTemplate() {
 }
 
 onMounted(async () => {
-  const scrollElement = document.querySelector('#myTemplBox') as HTMLElement | null;
-  if (scrollElement) {
-    scrollHeight.value = scrollElement.offsetHeight;
-    showScroll.value = true;
-  }
-
   const categories = await listLocalTemplateCategories();
   typeList.value = [
     { label: '全部', value: '' },
@@ -195,7 +201,15 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="less">
+.template-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .search-box {
+  flex: 0 0 auto;
   padding-top: 10px;
   padding-bottom: 10px;
   display: flex;
@@ -210,21 +224,27 @@ onMounted(async () => {
 }
 
 .scroll-box {
-  height: calc(100vh - 108px);
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 0 18px;
 }
 
 .list-box {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
 }
 
 .tmpl-img-box {
-  width: 140px;
+  width: 100%;
   cursor: pointer;
   border-radius: 5px;
   overflow: hidden;
+  background: #f8fafc;
 
   &:hover {
     :deep(.ivu-image-img) {

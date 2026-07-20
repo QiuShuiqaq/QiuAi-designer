@@ -103,7 +103,8 @@ export function extractDesignerAiTemplateSlots(input: {
         slotName: inferSlotName(role, readString(extension, 'slotName')),
         objectType,
         aiEnabled: readBoolean(extension, 'aiEnabled', false),
-        aiMode: (readString(extension, 'aiMode') || inferMode(role)) as DesignerAiTemplateSlot['aiMode'],
+        aiMode: (readString(extension, 'aiMode') ||
+          inferMode(role)) as DesignerAiTemplateSlot['aiMode'],
         editableAfterGenerate: readBoolean(extension, 'editableAfterGenerate', true),
         regenerateScope:
           (readString(extension, 'regenerateScope') as 'self' | 'group' | 'none') || 'self',

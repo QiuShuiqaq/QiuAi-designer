@@ -1,7 +1,7 @@
 {
   "name": "view-ui-project-ts",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "a template project for vue3, ViewUIPlus, TypeScript and Vite.",
   "packageManager": "pnpm@8.4.0",
   "scripts": {

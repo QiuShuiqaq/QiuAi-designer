@@ -48,7 +48,6 @@ const { selectFiles } = Utils;
 const canvasEditor = inject('canvasEditor');
 
 const fileList = ref([]);
-const isLogin = ref(false);
 const getFileListHandle = () => {
   // 获取素材列表
   getFileList()
@@ -60,10 +59,9 @@ const getFileListHandle = () => {
           imgUrl: APP_APIHOST + item.attributes.img.data.attributes.url,
         };
       });
-      isLogin.value = true;
     })
     .catch(() => {
-      isLogin.value = false;
+      fileList.value = [];
     });
 };
 

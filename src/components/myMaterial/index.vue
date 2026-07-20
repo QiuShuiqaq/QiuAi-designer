@@ -7,7 +7,7 @@
 -->
 
 <template>
-  <div class="my-material" v-if="isLogin">
+  <div class="my-material">
     <Tabs v-model="type">
       <TabPane label="模板" name="templ">
         <myTempl v-if="type === 'templ'"></myTempl>
@@ -17,33 +17,11 @@
       </TabPane>
     </Tabs>
   </div>
-  <div class="tip" v-else>请先登录</div>
 </template>
 
 <script setup name="ImportTmpl">
-import { getFileList } from '@/api/user';
 import uploadMaterial from './uploadMaterial';
 import myTempl from './myTempl';
 
 const type = ref('templ');
-const isLogin = ref(false);
-const getFileListHandle = () => {
-  // 获取素材列表
-  getFileList()
-    .then(() => {
-      isLogin.value = true;
-    })
-    .catch(() => {
-      isLogin.value = false;
-    });
-};
-
-getFileListHandle();
 </script>
-
-<style scoped lang="less">
-.tip {
-  padding: 20px;
-  text-align: center;
-}
-</style>

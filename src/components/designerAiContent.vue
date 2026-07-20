@@ -3,11 +3,8 @@
     <div v-if="embedded" class="designer-ai-content__header">
       <div>
         <h3>AI 助手</h3>
-        <p>按图层生成或改写内容，先出结果的部分会先应用到画布。</p>
+        <p>像聊天一样描述需求。常用操作请在画布或图层上右键。</p>
       </div>
-      <Button size="small" @click="refreshSlots" :disabled="isSubmitting || isPolling || isLoading">
-        刷新图层
-      </Button>
     </div>
 
     <div v-if="!platformReady" class="designer-ai-content__empty">
@@ -25,162 +22,69 @@
         <template #desc>{{ errorMessage }}</template>
       </Alert>
 
-      <Alert v-if="infoMessage" type="info" show-icon>
-        <template #desc>{{ infoMessage }}</template>
-      </Alert>
+      <div class="designer-ai-content__chat">
+        <div ref="messagesRef" class="designer-ai-content__messages">
+          <div
+            v-for="message in conversationMessages"
+            :key="message.id"
+            class="designer-ai-content__message"
+            :class="`designer-ai-content__message--${message.role}`"
+          >
+            <span>{{ message.title }} · {{ formatTime(message.createdAt) }}</span>
+            <p>{{ message.content }}</p>
+          </div>
 
-      <div v-if="embedded" class="designer-ai-content__overview">
-        <div class="designer-ai-content__overview-card">
-          <span>状态</span>
-          <strong>{{ isActivated ? '可直接生成' : '需先激活' }}</strong>
-          <small>{{ isActivated ? '平台授权已就绪' : '请先到“我的”完成激活' }}</small>
+          <div v-if="currentJob" class="designer-ai-content__job-inline">
+            <Tag :color="jobStatusColor">{{ currentJob.status }}</Tag>
+            <span>
+              任务 ID：{{ currentJob.jobId }} · 更新时间：{{ formatTime(currentJob.updatedAt) }}
+            </span>
+          </div>
         </div>
-        <div class="designer-ai-content__overview-card">
-          <span>当前选择</span>
-          <strong>{{ effectiveTargetCount }} / {{ maxTargetsPerJob }}</strong>
-          <small v-if="isDirectImageMode">已切换到当前图片直改</small>
-          <small v-else-if="selectedSlots.length">{{ enabledSlots.length }} 个图层可用</small>
-          <small v-else>{{ enabledSlots.length }} 个图层可用</small>
-        </div>
-        <div class="designer-ai-content__overview-card">
-          <span>背景模型</span>
-          <strong>{{ defaultImageModel }}</strong>
-          <small>{{ defaultImageSizeLabel }}</small>
-        </div>
-      </div>
 
-      <div v-if="!embedded" class="designer-ai-content__summary">
-        <div class="designer-ai-content__summary-card">
-          <span>模板</span>
-          <strong>{{ templateId }}</strong>
-        </div>
-        <div class="designer-ai-content__summary-card">
-          <span>AI 图层</span>
-          <strong>{{ slots.length }}</strong>
-        </div>
-        <div class="designer-ai-content__summary-card">
-          <span>可用目标</span>
-          <strong>{{ isDirectImageMode ? 1 : enabledSlots.length }}</strong>
-        </div>
-        <div class="designer-ai-content__summary-card">
-          <span>背景模型</span>
-          <strong>{{ defaultImageModel }}</strong>
-          <small>{{ defaultImageSizeLabel }}</small>
-        </div>
-      </div>
-
-      <Form :label-width="88">
-        <FormItem label="语言">
-          <Select v-model="language">
-            <Option v-for="lang in supportedLanguages" :key="lang" :value="lang">
-              {{ lang }}
-            </Option>
-          </Select>
-        </FormItem>
-
-        <FormItem label="提示词">
+        <div class="designer-ai-content__composer">
           <Input
             v-model="prompt"
             type="textarea"
             :autosize="{ minRows: 4, maxRows: 8 }"
-            placeholder="描述你想生成或调整的背景、标题、卖点、按钮文案等内容"
+            placeholder="像聊天一样描述你要生成或修改的内容"
           />
-        </FormItem>
 
-        <FormItem label="快捷意图">
-          <div class="designer-ai-content__presets">
-            <Button
-              v-for="preset in promptPresets"
-              :key="preset.label"
-              size="small"
-              @click="applyPromptPreset(preset.prompt)"
-            >
-              {{ preset.label }}
-            </Button>
+          <div class="designer-ai-content__composer-foot">
+            <small>{{ isActivated ? '已激活，可直接发送。' : '当前未激活。' }}</small>
+            <div class="designer-ai-content__composer-actions">
+              <Button
+                :disabled="isSubmitting || isPolling || isCancelling"
+                @click="clearConversation"
+              >
+                清空
+              </Button>
+              <Button v-if="canCancelJob" :loading="isCancelling" @click="cancelJob">取消</Button>
+              <Button
+                type="primary"
+                :disabled="!canSubmit"
+                :loading="isSubmitting || isPolling"
+                @click="submitJob"
+              >
+                发送
+              </Button>
+            </div>
           </div>
-        </FormItem>
-
-        <FormItem label="智能模式">
-          <div class="designer-ai-content__agent">
-            <Checkbox v-model="autoTargeting">自动识别目标图层</Checkbox>
-            <span class="designer-ai-content__agent-tip">{{ agentTip }}</span>
-            <Button
-              size="small"
-              @click="applySuggestedTargets"
-              :disabled="!enabledSlots.length || isDirectImageMode"
-            >
-              重新识别
-            </Button>
-          </div>
-        </FormItem>
-
-        <FormItem label="目标">
-          <div
-            v-if="isDirectImageMode && directImageSelection"
-            class="designer-ai-content__direct-target"
-          >
-            <strong>{{ directImageSelection.label }}</strong>
-            <span>ID：{{ directImageSelection.id }}</span>
-            <span>
-              尺寸：{{ Math.round(directImageSelection.width) }} ×
-              {{ Math.round(directImageSelection.height) }}
-            </span>
-            <small>将直接替换当前图片图层内容，位置和尺寸保持不变。</small>
-          </div>
-          <div v-else-if="enabledSlots.length" class="designer-ai-content__targets">
-            <label v-for="slot in enabledSlots" :key="slot.id" class="designer-ai-content__target">
-              <Checkbox
-                :model-value="selectedSlotIds.includes(slot.id)"
-                @on-change="toggleSlot(slot.id, $event)"
-              />
-              <div class="designer-ai-content__target-meta">
-                <strong>{{ slot.slotName }}</strong>
-                <span>{{ slot.role }} / {{ slot.aiMode }}</span>
-              </div>
-            </label>
-          </div>
-          <Alert v-else type="warning" show-icon>
-            <template #desc>
-              当前画布没有可识别的 AI 图层。请先选择一个图片图层，或使用带 AI 图层定义的模板。
-            </template>
-          </Alert>
-        </FormItem>
-      </Form>
-
-      <div v-if="currentJob" class="designer-ai-content__job">
-        <div class="designer-ai-content__job-head">
-          <strong>当前任务</strong>
-          <Tag :color="jobStatusColor">{{ currentJob.status }}</Tag>
         </div>
-        <div class="designer-ai-content__job-meta">
-          <span>任务 ID：{{ currentJob.jobId }}</span>
-          <span>队列位置：{{ currentJob.queuePosition }}</span>
-          <span>更新时间：{{ formatTime(currentJob.updatedAt) }}</span>
-        </div>
-        <div v-if="currentJob.error" class="designer-ai-content__job-error">
-          {{ formatErrorMessage(currentJob.error, '任务执行失败') }}
-        </div>
-      </div>
-
-      <div class="designer-ai-content__actions">
-        <Button v-if="!embedded" @click="refreshSlots" :disabled="isSubmitting || isPolling">
-          刷新图层
-        </Button>
-        <Button v-if="canCancelJob" @click="cancelJob" :loading="isCancelling">取消任务</Button>
-        <Button type="primary" :loading="isSubmitting" :disabled="!canSubmit" @click="submitJob">
-          生成并应用
-        </Button>
       </div>
     </div>
   </section>
 </template>
-
 <script setup lang="ts" name="DesignerAiContent">
 import { Message } from 'view-ui-plus';
+import { v4 as uuidv4 } from 'uuid';
 import { useRoute } from 'vue-router';
+import { nextTick } from 'vue';
 
 import useSelect from '@/hooks/select';
 import { applyDesignerAiPatch } from '@/modules/designer-ai/patch';
+import { onDesignerAiPanelAction } from '@/modules/designer-ai/quick-actions';
+import type { DesignerAiQuickActionDetail } from '@/modules/designer-ai/quick-actions';
 import { isPlatformApiConfigured } from '@/platform/config';
 import {
   cancelDesignerAiJob,
@@ -217,6 +121,16 @@ type DirectImageSelection = {
   sourceUrl: string;
 };
 
+type DesignerAiConversationRole = 'assistant' | 'user' | 'error';
+
+type DesignerAiConversationMessage = {
+  id: string;
+  role: DesignerAiConversationRole;
+  title: string;
+  content: string;
+  createdAt: string;
+};
+
 const route = useRoute();
 const { canvasEditor, getObjectAttr } = useSelect();
 
@@ -226,41 +140,18 @@ const isSubmitting = ref(false);
 const isPolling = ref(false);
 const isCancelling = ref(false);
 const errorMessage = ref('');
-const infoMessage = ref('');
 const prompt = ref('');
 const language = ref('zh-CN');
-const autoTargeting = ref(true);
 const capabilities = ref<DesignerAiCapabilities | null>(null);
 const parsedSlots = ref<DesignerAiTemplateSlotsPayload | null>(null);
-const selectedSlotIds = ref<string[]>([]);
 const currentJob = ref<DesignerAiJob | null>(null);
 const activationStatus = ref<PlatformActivationStatus | null>(null);
 const directImageSelection = ref<DirectImageSelection | null>(null);
+const conversationMessages = ref<DesignerAiConversationMessage[]>([]);
+const messagesRef = ref<HTMLElement | null>(null);
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
-
-const promptPresets = [
-  {
-    label: '改背景',
-    prompt: '请生成一个更符合当前主题的背景，保留主体展示空间，提升整体质感。',
-  },
-  {
-    label: '主标题',
-    prompt: '请根据当前画面主题生成更有吸引力的主标题和副标题。',
-  },
-  {
-    label: '卖点文案',
-    prompt: '请补充简洁明确的卖点文案，适合电商或宣传海报使用。',
-  },
-  {
-    label: '按钮文案',
-    prompt: '请优化按钮和行动引导文案，让转化意图更明确。',
-  },
-  {
-    label: '整体优化',
-    prompt: '请结合当前模板，对背景、标题和文案进行整体优化，保持版式清晰。',
-  },
-];
+let stopPanelActionListener: (() => void) | null = null;
 
 const supportedLanguages = computed(() => {
   if (capabilities.value?.supportedLanguages?.length) {
@@ -277,29 +168,8 @@ const templateId = computed(() => {
 const slots = computed(() => parsedSlots.value?.slots || []);
 const enabledSlots = computed(() => slots.value.filter((slot) => slot.aiEnabled));
 const maxTargetsPerJob = computed(() => Math.max(1, capabilities.value?.maxTargetsPerJob || 4));
-const selectedSlots = computed(() =>
-  enabledSlots.value.filter((slot) => selectedSlotIds.value.includes(slot.id))
-);
 const hasDirectImageSelection = computed(() => Boolean(directImageSelection.value));
 const isDirectImageMode = computed(() => hasDirectImageSelection.value);
-const effectiveTargetCount = computed(() => {
-  if (isDirectImageMode.value) {
-    return 1;
-  }
-  return selectedSlots.value.length;
-});
-const defaultImageModel = computed(() => {
-  return String(capabilities.value?.defaultImageModel || 'nano-banana-2').trim() || 'nano-banana-2';
-});
-const defaultImageSizeLabel = computed(() => {
-  const defaultSize = String(capabilities.value?.defaultImageSize || '2K').trim() || '2K';
-  const supportedSizes = Array.isArray(capabilities.value?.supportedImageSizes)
-    ? capabilities.value.supportedImageSizes.filter((item) => String(item || '').trim())
-    : [];
-  const sizesLabel = supportedSizes.length ? supportedSizes.join(' / ') : '1K / 2K / 4K';
-  const modeLabel = capabilities.value?.mockEnabled ? 'Mock' : 'Provider';
-  return `${defaultSize} 默认 · ${sizesLabel} · ${modeLabel}`;
-});
 const isActivated = computed(() => {
   return (
     activationStatus.value?.status === 'activated' &&
@@ -308,29 +178,12 @@ const isActivated = computed(() => {
   );
 });
 
-const agentSuggestion = computed(() => buildSuggestedTargets(enabledSlots.value, prompt.value));
-const agentTip = computed(() => {
-  if (directImageSelection.value) {
-    return `已选中图片图层：${directImageSelection.value.label}，生成结果将直接替换当前图片。`;
-  }
-
-  if (!enabledSlots.value.length) {
-    return '当前画布还没有可生成的 AI 图层。';
-  }
-
-  if (!agentSuggestion.value.slots.length) {
-    return '未识别到明确意图，默认优先背景和标题图层。';
-  }
-
-  return `已识别：${agentSuggestion.value.slots.map((slot) => slot.slotName).join('、')}`;
-});
-
 const canSubmit = computed(() => {
   return Boolean(
     platformReady &&
       isActivated.value &&
       prompt.value.trim() &&
-      (isDirectImageMode.value || selectedSlots.value.length) &&
+      (isDirectImageMode.value || enabledSlots.value.length) &&
       !isSubmitting.value &&
       !isPolling.value
   );
@@ -354,6 +207,58 @@ function clearPolling() {
     clearTimeout(pollingTimer);
     pollingTimer = null;
   }
+}
+
+function createConversationMessage(
+  role: DesignerAiConversationRole,
+  title: string,
+  content: string
+) {
+  return {
+    id: uuidv4(),
+    role,
+    title,
+    content: String(content || '').trim(),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function appendConversationEntry(role: DesignerAiConversationRole, title: string, content: string) {
+  conversationMessages.value = [
+    ...conversationMessages.value,
+    createConversationMessage(role, title, content),
+  ].slice(-24);
+}
+
+async function clearConversation() {
+  conversationMessages.value = [
+    createConversationMessage('assistant', 'AI', '请直接描述你的需求。'),
+  ];
+  prompt.value = '';
+  await nextTick();
+  scrollMessagesToBottom();
+}
+
+function scrollMessagesToBottom() {
+  const element = messagesRef.value;
+  if (!element) {
+    return;
+  }
+
+  element.scrollTop = element.scrollHeight;
+}
+
+function handleDesignerAiPanelAction(detail: DesignerAiQuickActionDetail) {
+  const nextPrompt = String(detail.prompt || '').trim();
+  if (nextPrompt) {
+    prompt.value = nextPrompt;
+  }
+
+  appendConversationEntry(
+    'assistant',
+    '快捷操作',
+    detail.label ? `已填入：${detail.label}。你可以继续补充后直接发送。` : '已填入快捷操作。'
+  );
 }
 
 function normalizeCanvasJson() {
@@ -433,20 +338,6 @@ function buildSuggestedTargets(nextSlots: DesignerAiTemplateSlot[], promptValue:
     ids: merged.map((slot) => slot.id),
     slots: merged,
   };
-}
-
-function syncSuggestedTargets(force = false) {
-  if (!enabledSlots.value.length) {
-    selectedSlotIds.value = [];
-    return;
-  }
-
-  if (!autoTargeting.value && !force) {
-    return;
-  }
-
-  const suggestion = buildSuggestedTargets(enabledSlots.value, prompt.value);
-  selectedSlotIds.value = suggestion.ids;
 }
 
 async function loadActivationStatus() {
@@ -598,7 +489,6 @@ function buildDirectImageEditRequest(input: {
 
 async function refreshSlots() {
   errorMessage.value = '';
-  infoMessage.value = '';
   syncDirectImageSelection();
 
   try {
@@ -609,45 +499,24 @@ async function refreshSlots() {
     });
 
     parsedSlots.value = nextParsedSlots;
-    syncSuggestedTargets(true);
 
     if (!nextParsedSlots.slots.length) {
-      infoMessage.value = directImageSelection.value
-        ? '当前模板没有 AI 槽位，已切换为“当前图片直改”模式。'
-        : '当前画布没有识别到 AI 图层。请先选择一个图片图层，或使用带 AI 图层定义的模板。';
+      appendConversationEntry(
+        'assistant',
+        '??',
+        directImageSelection.value
+          ? '?????? AI ??????????????????'
+          : '????????? AI ?????????????????? AI ????????'
+      );
       return;
     }
 
     if (!nextParsedSlots.slots.some((slot) => slot.aiEnabled)) {
-      infoMessage.value = '当前模板存在 AI 图层定义，但没有启用可生成目标。';
+      appendConversationEntry('assistant', '??', '?????? AI ????????????????');
     }
   } catch (error) {
-    errorMessage.value = formatErrorMessage(error, '图层解析失败');
+    errorMessage.value = formatErrorMessage(error, '??????');
   }
-}
-
-function toggleSlot(slotId: string, checked: boolean) {
-  autoTargeting.value = false;
-
-  if (checked) {
-    if (!selectedSlotIds.value.includes(slotId)) {
-      selectedSlotIds.value = [...selectedSlotIds.value, slotId];
-    }
-    return;
-  }
-
-  selectedSlotIds.value = selectedSlotIds.value.filter((id) => id !== slotId);
-}
-
-function applySuggestedTargets() {
-  autoTargeting.value = true;
-  syncSuggestedTargets(true);
-}
-
-function applyPromptPreset(nextPrompt: string) {
-  prompt.value = nextPrompt;
-  autoTargeting.value = true;
-  syncSuggestedTargets(true);
 }
 
 function formatTime(value: string) {
@@ -685,6 +554,13 @@ async function pollJob(jobId: string) {
       if (job.status === 'succeeded' || job.status === 'partial_success') {
         isPolling.value = false;
         await applyJobResult(job);
+        appendConversationEntry(
+          'assistant',
+          '结果',
+          job.status === 'partial_success'
+            ? '任务已部分完成，结果已应用到画布。'
+            : '任务已完成，结果已应用到画布。'
+        );
         return;
       }
 
@@ -692,6 +568,7 @@ async function pollJob(jobId: string) {
         isPolling.value = false;
         if (job.error?.message) {
           errorMessage.value = job.error.message;
+          appendConversationEntry('error', '错误', job.error.message);
         }
         return;
       }
@@ -710,13 +587,17 @@ async function submitJob() {
   if (!canSubmit.value) {
     if (!isActivated.value) {
       errorMessage.value = '当前设备未激活，无法提交 AI 任务。请先在“我的”中完成授权激活。';
+      appendConversationEntry('error', '错误', errorMessage.value);
     }
     return;
   }
 
+  const userPrompt = prompt.value.trim();
   isSubmitting.value = true;
   errorMessage.value = '';
-  infoMessage.value = '';
+
+  appendConversationEntry('user', '你', userPrompt);
+  appendConversationEntry('assistant', 'AI', '收到，开始生成。');
 
   try {
     const { width, height, snapshot } = getCanvasSnapshot();
@@ -730,8 +611,8 @@ async function submitJob() {
         : {
             templateId: templateId.value,
             language: language.value,
-            userPrompt: prompt.value.trim(),
-            targets: selectedSlots.value.map((slot) => ({
+            userPrompt,
+            targets: buildSuggestedTargets(enabledSlots.value, userPrompt).slots.map((slot) => ({
               slotId: slot.id,
               role: slot.role,
               mode: slot.aiMode,
@@ -745,9 +626,11 @@ async function submitJob() {
     );
 
     currentJob.value = await getDesignerAiJob(response.jobId);
+    appendConversationEntry('assistant', 'AI', `任务已提交，ID：${response.jobId}`);
     await pollJob(response.jobId);
   } catch (error) {
     errorMessage.value = formatErrorMessage(error, '任务创建失败');
+    appendConversationEntry('error', '错误', errorMessage.value);
   } finally {
     isSubmitting.value = false;
   }
@@ -765,8 +648,11 @@ async function cancelJob() {
     currentJob.value = await getDesignerAiJob(currentJob.value.jobId);
     isPolling.value = false;
     Message.info('任务已取消');
+    appendConversationEntry('assistant', '结果', '任务已取消。');
   } catch (error) {
-    Message.error(formatErrorMessage(error, '取消任务失败'));
+    const message = formatErrorMessage(error, '取消任务失败');
+    Message.error(message);
+    appendConversationEntry('error', '错误', message);
   } finally {
     isCancelling.value = false;
   }
@@ -779,45 +665,49 @@ async function bootstrap() {
 
   isLoading.value = true;
   errorMessage.value = '';
-  infoMessage.value = '';
+
+  if (!conversationMessages.value.length) {
+    conversationMessages.value = [
+      createConversationMessage(
+        'assistant',
+        'AI',
+        '请直接描述你的需求，或在画布上右键图层快速填入。'
+      ),
+    ];
+  }
 
   try {
     await loadActivationStatus();
     await loadCapabilities();
     await refreshSlots();
-    if (!isActivated.value) {
-      infoMessage.value = '当前设备未激活。AI 功能可先浏览图层，真正生成前需要先到“我的”完成激活。';
-    }
   } catch (error) {
     errorMessage.value = formatErrorMessage(error, 'AI 面板初始化失败');
+    appendConversationEntry('error', '错误', errorMessage.value);
   } finally {
     isLoading.value = false;
   }
 }
 
 watch(
-  () => prompt.value,
-  () => {
-    syncSuggestedTargets();
-  }
-);
-
-watch(
-  () => enabledSlots.value.map((slot) => slot.id).join('|'),
-  () => {
-    syncSuggestedTargets();
+  () => conversationMessages.value.length,
+  async () => {
+    await nextTick();
+    scrollMessagesToBottom();
   }
 );
 
 onMounted(() => {
   getObjectAttr(syncDirectImageSelection);
   canvasEditor.canvas?.on('object:modified', syncDirectImageSelection);
+  stopPanelActionListener = onDesignerAiPanelAction(handleDesignerAiPanelAction);
   syncDirectImageSelection();
   bootstrap();
 });
 
 onBeforeUnmount(() => {
   canvasEditor.canvas?.off('object:modified', syncDirectImageSelection);
+  stopPanelActionListener?.();
+  stopPanelActionListener = null;
   clearPolling();
 });
 </script>

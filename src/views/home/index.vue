@@ -32,6 +32,7 @@ import Right from './components/right/index.vue';
 
 import zoom from '@/components/zoom.vue';
 import dragMode from '@/components/dragMode.vue';
+import DesignerAiContextMenuPlugin from '@/modules/designer-ai/context-menu-plugin';
 import { fabric } from 'fabric';
 
 import Editor, {
@@ -124,7 +125,8 @@ onMounted(() => {
     .use(ResizePlugin)
     .use(LockPlugin)
     .use(AddBaseTypePlugin)
-    .use(MaskPlugin);
+    .use(MaskPlugin)
+    .use(DesignerAiContextMenuPlugin);
 
   state.show = true;
   if (state.ruler) {

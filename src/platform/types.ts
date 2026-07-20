@@ -181,11 +181,9 @@ export type DesignerAiTargetRole =
   | 'logo'
   | 'decoration';
 
-export type DesignerAiMode =
-  | 'image-generate'
-  | 'text-generate'
-  | 'image-edit'
-  | 'layout-suggest';
+export type DesignerAiMode = 'image-generate' | 'text-generate' | 'image-edit' | 'layout-suggest';
+
+export type DesignerAiActionCategory = 'material' | 'edit';
 
 export interface DesignerAiTemplateMeta {
   templateVersion?: number;
@@ -264,12 +262,15 @@ export interface DesignerAiPatch {
 
 export interface DesignerAiCapabilities {
   imageTargets: string[];
+  imageEditTargets?: string[];
   textTargets: string[];
   maxTargetsPerJob: number;
   supportedLanguages: string[];
   supportedImageSizes?: string[];
   defaultImageModel?: string;
   defaultImageSize?: string;
+  defaultTextProvider?: string;
+  defaultTextModel?: string;
   patchVersion: 1;
   mockEnabled: boolean;
 }
@@ -278,18 +279,64 @@ export interface DesignerAiJobTarget {
   slotId: string;
   role: DesignerAiTargetRole;
   mode: DesignerAiMode;
+  targetSource?: 'ai-slot' | 'selected-layer';
 }
 
 export interface DesignerAiJobCreatePayload {
   templateId: string;
+  clientRequestId?: string;
   language: string;
   userPrompt: string;
+  actionKey?: string;
+  actionCategory?: DesignerAiActionCategory;
+  preserveLayout?: boolean;
+  candidateCount?: number;
   targets: DesignerAiJobTarget[];
   canvas: {
     width: number;
     height: number;
   };
   templateSnapshot: DesignerAiTemplateSnapshot;
+}
+
+export interface DesignerAiJobCandidate {
+  id: string;
+  label: string;
+  targetId: string;
+  role: DesignerAiTargetRole;
+  mode: DesignerAiMode;
+  previewText: string | null;
+  previewImageSrc: string | null;
+  patch: DesignerAiPatch;
+}
+
+export interface DesignerAiJobProgress {
+  total: number;
+  succeeded: number;
+  failed: number;
+  running: number;
+}
+
+export interface DesignerAiPollingAdvice {
+  recommendedIntervalMs: number;
+  minIntervalMs: number;
+  reason: 'QUEUED' | 'RUNNING_TEXT' | 'RUNNING_IMAGE' | 'RUNNING_VIDEO' | 'TERMINAL';
+}
+
+export interface DesignerAiUsageSummary {
+  billed: boolean;
+  billedAt: string | null;
+  currency: 'CNY';
+  totalAmountCny: number;
+  lines: Array<{
+    kind: 'text' | 'image' | 'video';
+    label: string;
+    model: string;
+    units: number;
+    unitPriceCny: number;
+    amountCny: number;
+    metadata?: Record<string, unknown>;
+  }>;
 }
 
 export interface DesignerAiJobCreateResponse {
@@ -304,13 +351,7 @@ export interface DesignerAiJob {
   templateId: string;
   language: string;
   userPrompt: string;
-  status:
-    | 'queued'
-    | 'running'
-    | 'succeeded'
-    | 'partial_success'
-    | 'failed'
-    | 'cancelled';
+  status: 'queued' | 'running' | 'succeeded' | 'partial_success' | 'failed' | 'cancelled';
   createdAt: string;
   updatedAt: string;
   targets: DesignerAiJobTarget[];
@@ -321,9 +362,18 @@ export interface DesignerAiJob {
     message: string;
     details?: unknown;
   } | null;
+  progress?: DesignerAiJobProgress;
+  pollingAdvice?: DesignerAiPollingAdvice;
+  usageSummary?: DesignerAiUsageSummary | null;
   metadata: {
     scene: string;
     templateVersion: number;
     mock: boolean;
+    actionKey: string;
+    clientRequestId?: string;
+    actionCategory: DesignerAiActionCategory;
+    preserveLayout: boolean;
+    candidateCount: number;
+    candidates: DesignerAiJobCandidate[];
   };
 }
