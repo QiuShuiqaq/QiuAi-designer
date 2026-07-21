@@ -90,6 +90,17 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
+        text: '抠图透明底',
+        hotkey: '',
+        onclick: () =>
+          this.emitAction({
+            actionKey: 'transparent-cutout',
+            label: '抠图透明底',
+            category: 'edit',
+            prompt: `${context}，请处理成透明底素材，去除白底、杂色边缘和多余背景，保留主体轮廓、姿态和细节，输出适合继续排版的 PNG 风格结果。`,
+          }),
+      },
+      {
         text: '自由描述',
         hotkey: '',
         onclick: () =>

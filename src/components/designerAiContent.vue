@@ -34,11 +34,29 @@
             <p>{{ message.content }}</p>
           </div>
 
-          <div v-if="currentJob" class="designer-ai-content__job-inline">
-            <Tag :color="jobStatusColor">{{ currentJob.status }}</Tag>
-            <span>
-              任务 ID：{{ currentJob.jobId }} · 更新时间：{{ formatTime(currentJob.updatedAt) }}
-            </span>
+          <div v-if="currentJob" class="designer-ai-content__job-progress">
+            <div class="designer-ai-content__job-progress-head">
+              <div>
+                <Tag :color="jobStatusColor">{{ currentJob.status }}</Tag>
+                <strong>{{ jobProgressStageLabel }}</strong>
+              </div>
+              <span>{{ jobProgressPercent }}%</span>
+            </div>
+
+            <Progress
+              :percent="jobProgressPercent"
+              :stroke-width="6"
+              :status="jobProgressBarStatus"
+              hide-info
+            />
+
+            <div class="designer-ai-content__job-progress-meta">
+              <span>任务 ID：{{ currentJob.jobId }}</span>
+              <span>已用：{{ jobElapsedText }}</span>
+              <span>预计：{{ jobEstimateText }}</span>
+            </div>
+
+            <p>{{ jobProgressDescription }}</p>
           </div>
 
           <div v-if="lastAssistantTurn" class="designer-ai-content__assistant-summary">
@@ -213,6 +231,8 @@ const activationStatus = ref<PlatformActivationStatus | null>(null);
 const directImageSelection = ref<DirectImageSelection | null>(null);
 const conversationMessages = ref<DesignerAiConversationMessage[]>([]);
 const messagesRef = ref<HTMLElement | null>(null);
+const pendingQuickAction = ref<DesignerAiQuickActionDetail | null>(null);
+const progressClock = ref(Date.now());
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let stopPanelActionListener: (() => void) | null = null;
@@ -272,6 +292,155 @@ const jobStatusColor = computed(() => {
   if (status === 'failed' || status === 'cancelled') return 'error';
   return 'primary';
 });
+
+const jobProgressPercent = computed(() => {
+  const job = currentJob.value;
+  if (!job) {
+    return 0;
+  }
+
+  if (job.status === 'succeeded' || job.status === 'partial_success') {
+    return 100;
+  }
+
+  if (job.status === 'failed' || job.status === 'cancelled') {
+    return Math.max(5, Math.min(99, estimateJobProgress(job)));
+  }
+
+  return estimateJobProgress(job);
+});
+
+const jobProgressBarStatus = computed(() => {
+  const status = currentJob.value?.status;
+  if (status === 'succeeded' || status === 'partial_success') {
+    return 'success';
+  }
+  if (status === 'failed' || status === 'cancelled') {
+    return 'wrong';
+  }
+  return 'active';
+});
+
+const jobProgressStageLabel = computed(() => {
+  const job = currentJob.value;
+  if (!job) {
+    return '等待任务';
+  }
+
+  if (job.status === 'queued') return '排队中';
+  if (job.status === 'succeeded') return '已完成';
+  if (job.status === 'partial_success') return '部分完成';
+  if (job.status === 'failed') return '生成失败';
+  if (job.status === 'cancelled') return '已取消';
+
+  const reason = job.pollingAdvice?.reason;
+  if (reason === 'RUNNING_TEXT') return '正在生成文案';
+  if (reason === 'RUNNING_VIDEO') return '正在生成视频';
+  if (reason === 'RUNNING_IMAGE') return '模型生成中';
+  return '任务处理中';
+});
+
+const jobProgressDescription = computed(() => {
+  const job = currentJob.value;
+  if (!job) {
+    return '';
+  }
+
+  if (job.status === 'queued') {
+    return '任务已提交，正在等待平台调度。';
+  }
+
+  if (job.status === 'running') {
+    const progress = job.progress;
+    if (progress?.total) {
+      return `正在处理 ${progress.total} 个目标，已完成 ${progress.succeeded} 个，失败 ${progress.failed} 个。`;
+    }
+    return '模型正在生成结果，完成后会自动应用到画布。';
+  }
+
+  if (job.status === 'succeeded') {
+    return '结果已生成并应用到画布。';
+  }
+
+  if (job.status === 'partial_success') {
+    return '部分结果已生成并应用到画布，未完成的目标已跳过。';
+  }
+
+  return job.error?.message || '任务未完成，请查看错误信息后重试。';
+});
+
+const jobElapsedText = computed(() => {
+  const job = currentJob.value;
+  if (!job?.createdAt) {
+    return '-';
+  }
+
+  const startedAt = new Date(job.createdAt).getTime();
+  const endedAt =
+    job.status === 'succeeded' ||
+    job.status === 'partial_success' ||
+    job.status === 'failed' ||
+    job.status === 'cancelled'
+      ? new Date(job.updatedAt || job.createdAt).getTime()
+      : progressClock.value;
+
+  return formatDuration(Math.max(0, endedAt - startedAt));
+});
+
+const jobEstimateText = computed(() => {
+  const job = currentJob.value;
+  if (!job) {
+    return '-';
+  }
+
+  if (job.status === 'succeeded' || job.status === 'partial_success') {
+    return '已完成';
+  }
+
+  if (job.status === 'failed' || job.status === 'cancelled') {
+    return '已结束';
+  }
+
+  const reason = job.pollingAdvice?.reason;
+  if (reason === 'RUNNING_TEXT') return '10-30 秒';
+  if (reason === 'RUNNING_VIDEO') return '3-10 分钟';
+  return '60-180 秒';
+});
+
+function estimateJobProgress(job: DesignerAiJob) {
+  const progress = job.progress;
+  if (progress?.total) {
+    const completedWeight = progress.succeeded + progress.failed;
+    const runningWeight = progress.running * 0.45;
+    return Math.max(
+      8,
+      Math.min(96, Math.round(((completedWeight + runningWeight) / progress.total) * 100))
+    );
+  }
+
+  if (job.status === 'queued') {
+    return 8;
+  }
+
+  if (job.status === 'running') {
+    const elapsedMs = Math.max(0, progressClock.value - new Date(job.createdAt).getTime());
+    return Math.max(18, Math.min(92, Math.round(18 + (elapsedMs / 180000) * 64)));
+  }
+
+  return 0;
+}
+
+function formatDuration(durationMs: number) {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes <= 0) {
+    return `${seconds} 秒`;
+  }
+
+  return `${minutes} 分 ${seconds} 秒`;
+}
 
 function formatAssistantMode(mode: string) {
   if (mode === 'quick_image') return '单图生成';
@@ -335,6 +504,7 @@ async function clearConversation() {
     createConversationMessage('assistant', 'AI', '请直接描述你的需求。'),
   ];
   lastAssistantTurn.value = null;
+  pendingQuickAction.value = null;
   prompt.value = '';
   await nextTick();
   scrollMessagesToBottom();
@@ -351,6 +521,7 @@ function scrollMessagesToBottom() {
 
 function handleDesignerAiPanelAction(detail: DesignerAiQuickActionDetail) {
   const nextPrompt = String(detail.prompt || '').trim();
+  pendingQuickAction.value = detail;
   if (nextPrompt) {
     prompt.value = nextPrompt;
   }
@@ -781,8 +952,8 @@ function buildDirectImageEditRequest(input: {
     },
     templateSnapshot,
     clientRequestId: uuidv4(),
-    actionKey: 'image-edit',
-    actionCategory: 'edit',
+    actionKey: pendingQuickAction.value?.actionKey || 'image-edit',
+    actionCategory: pendingQuickAction.value?.category || 'edit',
     preserveLayout: true,
     candidateCount: 1,
   };
@@ -849,6 +1020,7 @@ async function pollJob(jobId: string) {
 
   const run = async () => {
     try {
+      progressClock.value = Date.now();
       const job = await getDesignerAiJob(jobId);
       currentJob.value = job;
 
@@ -954,8 +1126,8 @@ async function submitJob() {
           },
           templateSnapshot: snapshot,
           clientRequestId: uuidv4(),
-          actionKey: '',
-          actionCategory: 'edit',
+          actionKey: pendingQuickAction.value?.actionKey || '',
+          actionCategory: pendingQuickAction.value?.category || 'edit',
           preserveLayout: true,
           candidateCount: 1,
         };
@@ -978,6 +1150,7 @@ async function submitJob() {
       currentJob.value = await getDesignerAiJob(response.jobIds[0]);
       await pollJob(response.jobIds[0]);
     }
+    pendingQuickAction.value = null;
   } catch (error) {
     errorMessage.value = formatErrorMessage(error, '任务创建失败');
     appendConversationEntry('error', '错误', errorMessage.value);
@@ -1219,14 +1392,51 @@ onBeforeUnmount(() => {
   background: linear-gradient(180deg, rgba(254, 242, 242, 0.98) 0%, rgba(255, 247, 247, 0.96) 100%);
 }
 
-.designer-ai-content__job-inline {
+.designer-ai-content__job-progress {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.designer-ai-content__job-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.designer-ai-content__job-progress-head > div {
+  display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px;
+}
+
+.designer-ai-content__job-progress-head strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.designer-ai-content__job-progress-head > span {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.designer-ai-content__job-progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   color: #475569;
   font-size: 12px;
+}
+
+.designer-ai-content__job-progress p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .designer-ai-content__assistant-summary {

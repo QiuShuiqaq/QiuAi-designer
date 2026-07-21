@@ -10,6 +10,7 @@ import type {
   DesignerAiPatchUpdateStyleAction,
   DesignerAiPatchUpdateTextAction,
 } from '@/platform/types';
+import { createTransparentBackgroundDataUrl } from './background-cutout';
 
 export interface DesignerAiPatchApplyError {
   targetId: string;
@@ -52,6 +53,137 @@ function createError(targetId: string, reason: string): DesignerAiPatchApplyErro
   return { targetId, reason };
 }
 
+function isDataImageUrl(value: string) {
+  return /^data:image\/[^;]+;base64,/i.test(String(value || '').trim());
+}
+
+function loadImageElement(sourceUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('IMAGE_LOAD_FAILED'));
+    image.src = sourceUrl;
+  });
+}
+
+function exportImageObjectDataUrl(image: fabric.Image) {
+  try {
+    const dataUrl = String(
+      image.toDataURL({
+        format: 'png',
+        multiplier: 1,
+      }) || ''
+    ).trim();
+    return isDataImageUrl(dataUrl) ? dataUrl : '';
+  } catch {
+    return '';
+  }
+}
+
+async function hasUsefulEdgeAlphaMask(maskDataUrl: string) {
+  if (!maskDataUrl) {
+    return false;
+  }
+
+  try {
+    const image = await loadImageElement(maskDataUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || image.width || 1;
+    canvas.height = image.naturalHeight || image.height || 1;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) {
+      return false;
+    }
+
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    const edgeBand = Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) * 0.04));
+    let edgePixels = 0;
+    let transparentEdgePixels = 0;
+
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const isEdge =
+          x < edgeBand ||
+          y < edgeBand ||
+          x >= canvas.width - edgeBand ||
+          y >= canvas.height - edgeBand;
+        if (!isEdge) {
+          continue;
+        }
+
+        edgePixels += 1;
+        if (data[(y * canvas.width + x) * 4 + 3] < 245) {
+          transparentEdgePixels += 1;
+        }
+      }
+    }
+
+    return edgePixels > 0 && transparentEdgePixels / edgePixels >= 0.02;
+  } catch {
+    return false;
+  }
+}
+
+async function applyAlphaMaskToImage(sourceUrl: string, maskDataUrl: string) {
+  if (!maskDataUrl) {
+    return sourceUrl;
+  }
+
+  try {
+    const [sourceImage, maskImage] = await Promise.all([
+      loadImageElement(sourceUrl),
+      loadImageElement(maskDataUrl),
+    ]);
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceImage.naturalWidth || sourceImage.width || 1;
+    canvas.height = sourceImage.naturalHeight || sourceImage.height || 1;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return sourceUrl;
+    }
+
+    context.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+    context.globalCompositeOperation = 'destination-in';
+    context.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
+    context.globalCompositeOperation = 'source-over';
+
+    return canvas.toDataURL('image/png');
+  } catch {
+    return sourceUrl;
+  }
+}
+
+function shouldAutoCutoutGeneratedImage(action: DesignerAiPatchReplaceImageAction) {
+  const meta = action.meta || {};
+  const actionKey = String(meta.actionKey || '').toLowerCase();
+  const userPrompt = String(meta.userPrompt || '').toLowerCase();
+
+  if (actionKey.includes('transparent') || actionKey.includes('cutout')) {
+    return true;
+  }
+
+  return /透明|抠图|去底|去白底|去背景|transparent|cutout|remove background/.test(userPrompt);
+}
+
+async function buildPostProcessedImageSrc(
+  action: DesignerAiPatchReplaceImageAction,
+  imageTarget: fabric.Image
+) {
+  const originalMaskDataUrl = exportImageObjectDataUrl(imageTarget);
+  if (await hasUsefulEdgeAlphaMask(originalMaskDataUrl)) {
+    return applyAlphaMaskToImage(action.src, originalMaskDataUrl);
+  }
+
+  if (shouldAutoCutoutGeneratedImage(action)) {
+    return createTransparentBackgroundDataUrl(action.src);
+  }
+
+  return action.src;
+}
+
 async function applyReplaceImageAction(
   canvas: fabric.Canvas,
   action: DesignerAiPatchReplaceImageAction
@@ -75,10 +207,14 @@ async function applyReplaceImageAction(
   const height = imageTarget.get('height');
   const scaleX = imageTarget.get('scaleX') || 1;
   const scaleY = imageTarget.get('scaleY') || 1;
+  const clipPath = imageTarget.get('clipPath');
+  const cropX = imageTarget.get('cropX') || 0;
+  const cropY = imageTarget.get('cropY') || 0;
+  const nextSrc = await buildPostProcessedImageSrc(action, imageTarget);
 
   await new Promise<void>((resolve) => {
     imageTarget.setSrc(
-      action.src,
+      nextSrc,
       () => {
         const nextWidth = imageTarget.get('width') || width || 1;
         const nextHeight = imageTarget.get('height') || height || 1;
@@ -86,7 +222,12 @@ async function applyReplaceImageAction(
           imageTarget.set('scaleX', (width * scaleX) / nextWidth);
           imageTarget.set('scaleY', (height * scaleY) / nextHeight);
         }
-        imageTarget.set('originSrc', action.src);
+        imageTarget.set({
+          clipPath,
+          cropX,
+          cropY,
+          originSrc: nextSrc,
+        });
         resolve();
       },
       { crossOrigin: 'anonymous' }
