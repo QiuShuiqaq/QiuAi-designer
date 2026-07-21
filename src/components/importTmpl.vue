@@ -56,6 +56,10 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import useSelect from '@/hooks/select';
 import {
+  saveCurrentDesign,
+  runWithoutLocalDesignAutosave,
+} from '@/modules/local-workspace/workspace';
+import {
   listLocalTemplateCategories,
   loadLocalTemplateById,
   queryLocalTemplates,
@@ -152,16 +156,36 @@ function replaceRouteQuery(templateId: number) {
 
 async function loadTemplateIntoCanvas(templateId: number) {
   Spin.show({
-    render: (h) => h('div', t('alert.loading_data')),
+    render: (h: any) => h('div', t('alert.loading_data')),
   });
 
   try {
     const template = await loadLocalTemplateById(templateId);
+    await saveCurrentDesign(canvasEditor);
     replaceRouteQuery(templateId);
-    canvasEditor.loadJSON(JSON.stringify(template.json), Spin.hide);
-  } catch (error) {
+
+    await runWithoutLocalDesignAutosave(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          try {
+            canvasEditor.loadJSON(JSON.stringify(template.json), () => {
+              canvasEditor.clearAndSaveState?.();
+              resolve();
+            });
+          } catch (error) {
+            reject(error);
+          }
+        })
+    );
+
+    await saveCurrentDesign(canvasEditor, {
+      forceNew: true,
+      templateId: String(template.id),
+      templateName: template.name,
+      name: template.name,
+    });
+  } finally {
     Spin.hide();
-    throw error;
   }
 }
 

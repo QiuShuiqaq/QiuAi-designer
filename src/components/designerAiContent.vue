@@ -1,9 +1,9 @@
 <template>
   <section class="designer-ai-content" :class="{ 'designer-ai-content--embedded': embedded }">
     <div v-if="embedded" class="designer-ai-content__header">
-      <div>
-        <h3>AI 助手</h3>
-        <p>像聊天一样描述需求。常用操作请在画布或图层上右键。</p>
+      <div class="designer-ai-content__header-main">
+        <h3>智能体设计师</h3>
+        <p>您好，我是您的专属智能体设计师</p>
       </div>
     </div>
 
@@ -116,6 +116,20 @@
         </div>
 
         <div class="designer-ai-content__composer">
+          <div class="designer-ai-content__mode-row">
+            <ButtonGroup size="small" class="designer-ai-content__mode-tabs">
+              <Button
+                v-for="option in workModeOptions"
+                :key="option.value"
+                :type="workMode === option.value ? 'primary' : 'default'"
+                @click="workMode = option.value"
+              >
+                {{ option.label }}
+              </Button>
+            </ButtonGroup>
+            <span>{{ workModeHint }}</span>
+          </div>
+
           <Input
             v-model="prompt"
             type="textarea"
@@ -158,6 +172,8 @@ import useSelect from '@/hooks/select';
 import { applyDesignerAiPatch } from '@/modules/designer-ai/patch';
 import { onDesignerAiPanelAction } from '@/modules/designer-ai/quick-actions';
 import type { DesignerAiQuickActionDetail } from '@/modules/designer-ai/quick-actions';
+import { saveImageSourceAsLocalAsset } from '@/modules/local-workspace/assets';
+import { saveCurrentDesign } from '@/modules/local-workspace/workspace';
 import { isPlatformApiConfigured } from '@/platform/config';
 import {
   cancelDesignerAiJob,
@@ -176,6 +192,7 @@ import {
 import type {
   DesignerAiCapabilities,
   DesignerAiJob,
+  DesignerAiPatch,
   DesignerAiMode,
   DesignerAiTargetRole,
   DesignerAiTemplateSlot,
@@ -205,6 +222,12 @@ type DirectImageSelection = {
   sourceDataUrl?: string;
 };
 
+type ActiveCanvasSelection = {
+  objectId: string;
+  objectType: string;
+  label: string;
+};
+
 type DesignerAiConversationRole = 'assistant' | 'user' | 'error';
 
 type DesignerAiConversationMessage = {
@@ -214,6 +237,10 @@ type DesignerAiConversationMessage = {
   content: string;
   createdAt: string;
 };
+
+type DesignerAiWorkMode = 'auto' | 'overall' | 'layer';
+
+const DESIGNER_AI_WELCOME_MESSAGE = '您好，我是您的专属智能体设计师';
 
 const route = useRoute();
 const { canvasEditor, getObjectAttr } = useSelect();
@@ -232,10 +259,12 @@ const currentJob = ref<DesignerAiJob | null>(null);
 const lastAssistantTurn = ref<DesignerAssistantTurnResponse | null>(null);
 const activationStatus = ref<PlatformActivationStatus | null>(null);
 const directImageSelection = ref<DirectImageSelection | null>(null);
+const activeCanvasSelection = ref<ActiveCanvasSelection | null>(null);
 const conversationMessages = ref<DesignerAiConversationMessage[]>([]);
 const messagesRef = ref<HTMLElement | null>(null);
 const pendingQuickAction = ref<DesignerAiQuickActionDetail | null>(null);
 const progressClock = ref(Date.now());
+const workMode = ref<DesignerAiWorkMode>('auto');
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let stopPanelActionListener: (() => void) | null = null;
@@ -263,7 +292,30 @@ const isDirectImageMode = computed(() => {
     return false;
   }
 
-  return shouldUseDirectImageMode(prompt.value);
+  return shouldUseLayerMode(prompt.value);
+});
+const workModeOptions: Array<{ value: DesignerAiWorkMode; label: string }> = [
+  { value: 'auto', label: '自动' },
+  { value: 'overall', label: '总体设计' },
+  { value: 'layer', label: '图层设计' },
+];
+const workModeHint = computed(() => {
+  const selection = activeCanvasSelection.value;
+  const layerLabel = selection?.label ? `「${selection.label}」` : '';
+
+  if (workMode.value === 'overall') {
+    return '总体设计：从需求拆解整张设计，不依赖选中图层。';
+  }
+
+  if (workMode.value === 'layer') {
+    return selection
+      ? `图层设计：当前目标 ${layerLabel}。`
+      : '图层设计：请先在画布选中要修改的图层。';
+  }
+
+  return selection
+    ? `自动：局部修改会优先作用于 ${layerLabel}。`
+    : '自动：普通聊天或整体设计；局部修改请先选中图层。';
 });
 const isActivated = computed(() => {
   return (
@@ -504,7 +556,7 @@ function appendConversationEntry(role: DesignerAiConversationRole, title: string
 
 async function clearConversation() {
   conversationMessages.value = [
-    createConversationMessage('assistant', 'AI', '请直接描述你的需求。'),
+    createConversationMessage('assistant', 'AI', DESIGNER_AI_WELCOME_MESSAGE),
   ];
   lastAssistantTurn.value = null;
   pendingQuickAction.value = null;
@@ -583,7 +635,17 @@ function getKeywordMap() {
     'body-text': ['文案', '描述', '说明', 'body', 'copy'],
     cta: ['按钮', '行动', '下单', '立即', '咨询', 'cta', 'button'],
     price: ['价格', '售价', '优惠', 'price'],
-    'product-image': ['商品图', '产品图', '主体', 'product'],
+    'product-image': [
+      '商品图',
+      '产品图',
+      '主体',
+      '模特',
+      '人物',
+      '人像',
+      'model',
+      'person',
+      'product',
+    ],
     logo: ['logo', '品牌', '标志'],
     decoration: ['装饰', '图标', 'icon', '点缀', '线条'],
   } as const;
@@ -607,7 +669,10 @@ function buildSuggestedTargets(nextSlots: DesignerAiTemplateSlot[], promptValue:
 
   const explicitMatches = rankedSlots.filter((slot) => matchedRoles.has(slot.role));
   const fallbackMatches = rankedSlots.filter((slot) => !matchedRoles.has(slot.role));
-  const merged = [...explicitMatches, ...fallbackMatches].slice(0, maxTargetsPerJob.value);
+  const merged = (explicitMatches.length ? explicitMatches : fallbackMatches).slice(
+    0,
+    maxTargetsPerJob.value
+  );
 
   return {
     ids: merged.map((slot) => slot.id),
@@ -869,19 +934,28 @@ function getActiveCanvasSelection() {
   const activeObject = canvasEditor.canvas?.getActiveObject?.() as {
     id?: string;
     type?: string;
+    text?: string;
+    get?: (key: string) => unknown;
   } | null;
 
   if (!activeObject || !activeObject.id || activeObject.id === 'workspace') {
     return null;
   }
 
+  const label =
+    String(
+      activeObject.get?.('name') || activeObject.get?.('slotName') || activeObject.text || ''
+    ).trim() || String(activeObject.type || '图层');
+
   return {
     objectId: String(activeObject.id),
     objectType: String(activeObject.type || 'object'),
+    label,
   };
 }
 
 function syncDirectImageSelection() {
+  activeCanvasSelection.value = getActiveCanvasSelection();
   directImageSelection.value = getActiveImageObject();
 }
 
@@ -916,6 +990,106 @@ function shouldUseDirectImageMode(promptValue: string) {
   ];
 
   return editKeywords.some((keyword) => normalizedPrompt.includes(keyword));
+}
+
+function isLayerEditIntent(promptValue: string) {
+  return shouldUseDirectImageMode(promptValue);
+}
+
+function isOverallDesignIntent(promptValue: string) {
+  const normalizedPrompt = String(promptValue || '')
+    .trim()
+    .toLowerCase();
+  if (!normalizedPrompt) {
+    return false;
+  }
+
+  return /海报|价格表|详情页|整张|整套|整体|版式|排版|设计|生成|做一张|做一个|poster|banner|layout|design/.test(
+    normalizedPrompt
+  );
+}
+
+function shouldUseLayerMode(promptValue: string) {
+  const normalizedPrompt = String(promptValue || '').trim();
+  if (!normalizedPrompt || workMode.value === 'overall') {
+    return false;
+  }
+
+  if (workMode.value === 'layer') {
+    return Boolean(activeCanvasSelection.value);
+  }
+
+  return Boolean(activeCanvasSelection.value && isLayerEditIntent(normalizedPrompt));
+}
+
+function shouldAskForLayerSelection(promptValue: string) {
+  const normalizedPrompt = String(promptValue || '').trim();
+  if (!normalizedPrompt || workMode.value === 'overall') {
+    return false;
+  }
+
+  if (workMode.value === 'layer') {
+    return !activeCanvasSelection.value;
+  }
+
+  return !activeCanvasSelection.value && isLayerEditIntent(normalizedPrompt);
+}
+
+function inferSelectedLayerRole(selection: ActiveCanvasSelection): DesignerAiTargetRole {
+  const type = selection.objectType.toLowerCase();
+  if (type.includes('text')) {
+    return 'body-text';
+  }
+
+  if (type === 'image') {
+    return 'product-image';
+  }
+
+  return 'decoration';
+}
+
+function inferSelectedLayerMode(selection: ActiveCanvasSelection): DesignerAiMode {
+  const type = selection.objectType.toLowerCase();
+  if (type.includes('text')) {
+    return 'text-generate';
+  }
+
+  if (type === 'image') {
+    return 'image-edit';
+  }
+
+  return 'image-edit';
+}
+
+function buildSelectedLayerTarget(selection: ActiveCanvasSelection) {
+  const matchedSlot = enabledSlots.value.find((slot) => slot.id === selection.objectId);
+  const role = matchedSlot?.role || inferSelectedLayerRole(selection);
+  const mode = matchedSlot?.aiMode || inferSelectedLayerMode(selection);
+
+  return {
+    slotId: selection.objectId,
+    role,
+    mode,
+    targetSource: 'selected-layer' as const,
+  };
+}
+
+function buildAssistantTargets(promptValue: string) {
+  const selection = activeCanvasSelection.value;
+  if (selection && shouldUseLayerMode(promptValue)) {
+    return [buildSelectedLayerTarget(selection)];
+  }
+
+  if (workMode.value === 'auto' && !isOverallDesignIntent(promptValue)) {
+    return [];
+  }
+
+  return buildSuggestedTargets(enabledSlots.value, promptValue).slots.map((slot) => ({
+    slotId: slot.id,
+    role: slot.role,
+    mode: slot.aiMode,
+    targetSource: 'ai-slot' as const,
+  }));
 }
 
 function buildDirectImageEditRequest(input: {
@@ -1057,6 +1231,69 @@ function formatTime(value: string) {
   return new Date(value).toLocaleString();
 }
 
+function getImageSourceFromCanvasObject(objectId: string) {
+  const editorCanvas = (canvasEditor as any).canvas;
+  const target = (editorCanvas?.getObjects?.() || []).find((item: { id?: string }) => {
+    return String(item?.id || '') === objectId;
+  }) as
+    | {
+        get?: (key: string) => unknown;
+        getSrc?: () => string;
+        src?: string;
+        originSrc?: string;
+      }
+    | undefined;
+
+  if (!target) {
+    return '';
+  }
+
+  return String(
+    target.getSrc?.() ||
+      target.get?.('src') ||
+      target.src ||
+      target.get?.('originSrc') ||
+      target.originSrc ||
+      ''
+  ).trim();
+}
+
+async function saveGeneratedImageAssets(patch: DesignerAiPatch) {
+  const sources = new Map<string, string>();
+
+  (patch.actions || []).forEach((action, index) => {
+    if (action.type === 'replace-image-src') {
+      const appliedSource = getImageSourceFromCanvasObject(action.targetId);
+      const source = appliedSource || action.src;
+      if (source) {
+        sources.set(`${action.targetId}-${index}`, source);
+      }
+      return;
+    }
+
+    if (action.type === 'add-object') {
+      const object = action.object || {};
+      const objectId = String(object.id || '').trim();
+      const objectType = String(object.type || '').trim();
+      const appliedSource = objectId ? getImageSourceFromCanvasObject(objectId) : '';
+      const source = appliedSource || String(object.src || '').trim();
+      if (objectType === 'image' && source) {
+        sources.set(`${objectId || 'image'}-${index}`, source);
+      }
+    }
+  });
+
+  await Promise.all(
+    [...sources.values()].map((src) =>
+      saveImageSourceAsLocalAsset({
+        src,
+        source: 'ai-generated',
+        name: `AI生成图片 ${new Date().toLocaleString()}`,
+      }).catch(() => null)
+    )
+  );
+}
+
 async function applyJobResult(job: DesignerAiJob) {
   if (!job.result) {
     return;
@@ -1064,6 +1301,8 @@ async function applyJobResult(job: DesignerAiJob) {
 
   const result = await applyDesignerAiPatch(canvasEditor, job.result);
   canvasEditor.clearAndSaveState();
+  await saveGeneratedImageAssets(job.result);
+  await saveCurrentDesign(canvasEditor).catch(() => null);
 
   if (result.failed > 0) {
     Message.warning(`AI 已应用部分结果，成功 ${result.applied}，失败 ${result.failed}`);
@@ -1152,12 +1391,27 @@ async function submitJob() {
   }
 
   const userPrompt = prompt.value.trim();
+  syncDirectImageSelection();
+
+  if (shouldAskForLayerSelection(userPrompt)) {
+    appendConversationEntry('user', '你', userPrompt);
+    prompt.value = '';
+    appendConversationEntry(
+      'assistant',
+      'AI',
+      '请先选中要修改的图层，或切换到「总体设计」让我重新规划整张设计。'
+    );
+    pendingQuickAction.value = null;
+    return;
+  }
+
   const conversationHistory = conversationMessages.value.slice(-12);
   isSubmitting.value = true;
   errorMessage.value = '';
 
   try {
     const { width, height, snapshot } = getCanvasSnapshot();
+    const layerSelection = shouldUseLayerMode(userPrompt) ? activeCanvasSelection.value : null;
     const requestPayload = isDirectImageMode.value
       ? buildDirectImageEditRequest({
           message: userPrompt,
@@ -1172,13 +1426,13 @@ async function submitJob() {
           language: language.value,
           message: userPrompt,
           conversationHistory,
-          selection: getActiveCanvasSelection(),
-          targets: buildSuggestedTargets(enabledSlots.value, userPrompt).slots.map((slot) => ({
-            slotId: slot.id,
-            role: slot.role,
-            mode: slot.aiMode,
-            targetSource: 'ai-slot' as const,
-          })),
+          selection: layerSelection
+            ? {
+                objectId: layerSelection.objectId,
+                objectType: layerSelection.objectType,
+              }
+            : null,
+          targets: buildAssistantTargets(userPrompt),
           canvas: {
             width,
             height,
@@ -1250,11 +1504,7 @@ async function bootstrap() {
 
   if (!conversationMessages.value.length) {
     conversationMessages.value = [
-      createConversationMessage(
-        'assistant',
-        'AI',
-        '请直接描述你的需求，或在画布上右键图层快速填入。'
-      ),
+      createConversationMessage('assistant', 'AI', DESIGNER_AI_WELCOME_MESSAGE),
     ];
   }
 
@@ -1281,6 +1531,9 @@ watch(
 
 onMounted(() => {
   getObjectAttr(syncDirectImageSelection);
+  canvasEditor.canvas?.on('selection:created', syncDirectImageSelection);
+  canvasEditor.canvas?.on('selection:updated', syncDirectImageSelection);
+  canvasEditor.canvas?.on('selection:cleared', syncDirectImageSelection);
   canvasEditor.canvas?.on('object:modified', syncDirectImageSelection);
   stopPanelActionListener = onDesignerAiPanelAction(handleDesignerAiPanelAction);
   stopSessionListener = onPlatformSessionTokenChange(() => {
@@ -1300,6 +1553,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  canvasEditor.canvas?.off('selection:created', syncDirectImageSelection);
+  canvasEditor.canvas?.off('selection:updated', syncDirectImageSelection);
+  canvasEditor.canvas?.off('selection:cleared', syncDirectImageSelection);
   canvasEditor.canvas?.off('object:modified', syncDirectImageSelection);
   stopPanelActionListener?.();
   stopPanelActionListener = null;
@@ -1541,6 +1797,20 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 12px;
   padding-top: 2px;
+}
+
+.designer-ai-content__mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.designer-ai-content__mode-tabs {
+  flex: 0 0 auto;
 }
 
 .designer-ai-content__composer :deep(.ivu-input) {

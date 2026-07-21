@@ -7,6 +7,7 @@ import fontStyle from '@/components/fontStyle.vue';
 import importTmpl from '@/components/importTmpl.vue';
 import layer from '@/components/layer.vue';
 import material from '@/components/material.vue';
+import myDesigns from '@/components/myDesigns/index.vue';
 import myMaterial from '@/components/myMaterial/index.vue';
 import platformCenter from '@/components/platformCenter.vue';
 import tools from '@/components/tools.vue';
@@ -30,6 +31,7 @@ const leftBarComponent = {
   fontStyle,
   layer,
   designerAi: designerAiPanel,
+  myDesigns,
   myMaterial,
   mine: platformCenter,
 };
@@ -77,6 +79,11 @@ const primaryLeftBar = reactive([
     key: 'myMaterial',
     name: computed(() => t('my_assets')),
     icon: 'ios-images-outline',
+  },
+  {
+    key: 'myDesigns',
+    name: computed(() => '我的设计'),
+    icon: 'ios-folder-open-outline',
   },
 ]);
 

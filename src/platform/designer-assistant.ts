@@ -5,6 +5,9 @@ import type { DesignerAssistantTurnRequest, DesignerAssistantTurnResponse } from
 export async function createDesignerAssistantTurn(payload: DesignerAssistantTurnRequest) {
   return platformHttp.post<DesignerAssistantTurnResponse>(
     `/api/products/${PLATFORM_PRODUCT_KEY}/assistant/turns`,
-    payload
+    payload,
+    {
+      timeout: 60000,
+    }
   );
 }

@@ -5,6 +5,7 @@ import type { DesignerAiActionCategory } from '@/platform/types';
 const SESSION_STORAGE_KEY_PREFIX = 'qiuai-designer.designer-ai.panel-session';
 const SESSION_STORAGE_VERSION = 1;
 const MAX_CONVERSATION_MESSAGES = 24;
+const WELCOME_MESSAGE = '您好，我是您的专属智能体设计师';
 
 export type DesignerAiConversationRole = 'assistant' | 'user' | 'error';
 
@@ -137,11 +138,7 @@ export function createDesignerAiConversationMessage(
 }
 
 export function createDesignerAiWelcomeMessage() {
-  return createDesignerAiConversationMessage(
-    'assistant',
-    'AI',
-    '选中一个图层后直接输入需求，例如“把商品背景换成浅色厨房场景”。常用操作也可以从右键菜单直接填入。'
-  );
+  return createDesignerAiConversationMessage('assistant', 'AI', WELCOME_MESSAGE);
 }
 
 export function loadDesignerAiPanelSession(templateId: string): DesignerAiPanelSessionState | null {

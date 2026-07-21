@@ -6,7 +6,7 @@
       AI
     </Button>
 
-    <Modal v-model="visible" title="AI 助手" width="760" footer-hide>
+    <Modal v-model="visible" title="智能体设计师" width="760" footer-hide>
       <designerAiContent />
     </Modal>
   </div>

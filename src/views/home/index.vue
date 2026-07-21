@@ -34,6 +34,7 @@ import Right from './components/right/index.vue';
 import zoom from '@/components/zoom.vue';
 import dragMode from '@/components/dragMode.vue';
 import DesignerAiContextMenuPlugin from '@/modules/designer-ai/context-menu-plugin';
+import { attachLocalDesignAutosave } from '@/modules/local-workspace/workspace';
 import { fabric } from 'fabric';
 
 import Editor, {
@@ -74,6 +75,7 @@ import Editor, {
 
 const APIHOST = import.meta.env.APP_APIHOST;
 const canvasEditor = new Editor() as IEditor;
+let detachLocalDesignAutosave: (() => void) | null = null;
 
 const state = reactive({
   show: false,
@@ -130,12 +132,17 @@ onMounted(() => {
     .use(DesignerAiContextMenuPlugin);
 
   state.show = true;
+  detachLocalDesignAutosave = attachLocalDesignAutosave(canvasEditor);
   if (state.ruler) {
     canvasEditor.rulerEnable();
   }
 });
 
-onUnmounted(() => canvasEditor.destory());
+onUnmounted(() => {
+  detachLocalDesignAutosave?.();
+  detachLocalDesignAutosave = null;
+  canvasEditor.destory();
+});
 
 const rulerSwitch = (val) => {
   if (val) {
