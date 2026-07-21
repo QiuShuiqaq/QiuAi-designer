@@ -198,6 +198,9 @@ type DirectImageSelection = {
   mode: DesignerAiMode;
   width: number;
   height: number;
+  displayWidth: number;
+  displayHeight: number;
+  aspectRatio: string;
   sourceUrl: string;
   sourceDataUrl?: string;
 };
@@ -774,6 +777,41 @@ function exportImageObjectDataUrl(
   }
 }
 
+const STANDARD_IMAGE_ASPECT_RATIOS = [
+  { label: '1:1', value: 1 },
+  { label: '4:5', value: 4 / 5 },
+  { label: '3:4', value: 3 / 4 },
+  { label: '2:3', value: 2 / 3 },
+  { label: '9:16', value: 9 / 16 },
+  { label: '16:9', value: 16 / 9 },
+  { label: '4:3', value: 4 / 3 },
+  { label: '3:2', value: 3 / 2 },
+];
+
+function resolveStandardImageAspectRatio(width: number, height: number) {
+  const normalizedWidth = Math.max(1, Number(width) || 1);
+  const normalizedHeight = Math.max(1, Number(height) || 1);
+  const ratio = normalizedWidth / normalizedHeight;
+
+  return (
+    STANDARD_IMAGE_ASPECT_RATIOS.map((candidate) => ({
+      ...candidate,
+      distance: Math.abs(candidate.value - ratio),
+    })).sort((left, right) => left.distance - right.distance)[0]?.label || '1:1'
+  );
+}
+
+function isTransparentCutoutIntent(promptValue: string) {
+  const actionKey = String(pendingQuickAction.value?.actionKey || '').toLowerCase();
+  const normalizedPrompt = String(promptValue || '').toLowerCase();
+
+  return (
+    actionKey.includes('transparent') ||
+    actionKey.includes('cutout') ||
+    /透明|抠图|去底|去白底|去背景|transparent|cutout|remove background/.test(normalizedPrompt)
+  );
+}
+
 function getActiveImageObject() {
   const activeObject = canvasEditor.canvas?.getActiveObject?.() as
     | ({
@@ -783,6 +821,8 @@ function getActiveImageObject() {
         originSrc?: string;
         getSrc?: () => string;
         get?: (key: string) => unknown;
+        getScaledWidth?: () => number;
+        getScaledHeight?: () => number;
         toDataURL?: (options?: Record<string, unknown>) => string;
         getElement?: () => unknown;
         _element?: unknown;
@@ -797,14 +837,29 @@ function getActiveImageObject() {
     String(activeObject.originSrc || '').trim() ||
     String(activeObject.getSrc?.() || '').trim() ||
     String(activeObject.get?.('src') || '').trim();
+  const width = Number(activeObject.get?.('width') || 0);
+  const height = Number(activeObject.get?.('height') || 0);
+  const scaleX = Math.abs(Number(activeObject.get?.('scaleX') || 1)) || 1;
+  const scaleY = Math.abs(Number(activeObject.get?.('scaleY') || 1)) || 1;
+  const displayWidth = Math.max(
+    1,
+    Math.round(Number(activeObject.getScaledWidth?.() || 0) || width * scaleX || width)
+  );
+  const displayHeight = Math.max(
+    1,
+    Math.round(Number(activeObject.getScaledHeight?.() || 0) || height * scaleY || height)
+  );
 
   return {
     id: String(activeObject.id),
     label: String(activeObject.get?.('name') || activeObject.text || '图片').trim() || '图片',
     role: 'product-image' as const,
     mode: 'image-edit' as const,
-    width: Number(activeObject.get?.('width') || 0),
-    height: Number(activeObject.get?.('height') || 0),
+    width,
+    height,
+    displayWidth,
+    displayHeight,
+    aspectRatio: resolveStandardImageAspectRatio(displayWidth, displayHeight),
     sourceUrl,
     sourceDataUrl: exportImageObjectDataUrl(activeObject),
   };
@@ -918,6 +973,10 @@ function buildDirectImageEditRequest(input: {
           regenerateScope: 'self',
           constraints: {
             editableSource: 'selected-image',
+            targetFrameWidth: selectedImage.displayWidth,
+            targetFrameHeight: selectedImage.displayHeight,
+            targetAspectRatio: selectedImage.aspectRatio,
+            targetFit: isTransparentCutoutIntent(input.message) ? 'contain' : 'cover',
           },
         },
       };

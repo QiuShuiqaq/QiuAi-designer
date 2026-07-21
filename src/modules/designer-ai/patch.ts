@@ -168,6 +168,87 @@ function shouldAutoCutoutGeneratedImage(action: DesignerAiPatchReplaceImageActio
   return /透明|抠图|去底|去白底|去背景|transparent|cutout|remove background/.test(userPrompt);
 }
 
+function resolveImageReplacementFit(action: DesignerAiPatchReplaceImageAction) {
+  return shouldAutoCutoutGeneratedImage(action) ? 'contain' : 'cover';
+}
+
+function resolveImageFrame(imageTarget: fabric.Image) {
+  const width = Math.max(1, Number(imageTarget.get('width') || 1));
+  const height = Math.max(1, Number(imageTarget.get('height') || 1));
+  const scaleX = Number(imageTarget.get('scaleX') || 1) || 1;
+  const scaleY = Number(imageTarget.get('scaleY') || 1) || 1;
+
+  return {
+    width,
+    height,
+    displayWidth: Math.max(1, Math.abs(width * scaleX)),
+    displayHeight: Math.max(1, Math.abs(height * scaleY)),
+    scaleSignX: scaleX < 0 ? -1 : 1,
+    scaleSignY: scaleY < 0 ? -1 : 1,
+    center: imageTarget.getCenterPoint(),
+    clipPath: imageTarget.get('clipPath'),
+  };
+}
+
+function fitImageIntoFrame(input: {
+  imageTarget: fabric.Image;
+  frame: ReturnType<typeof resolveImageFrame>;
+  sourceWidth: number;
+  sourceHeight: number;
+  fit: 'cover' | 'contain';
+  originSrc: string;
+}) {
+  const sourceWidth = Math.max(1, Number(input.sourceWidth) || 1);
+  const sourceHeight = Math.max(1, Number(input.sourceHeight) || 1);
+
+  if (input.fit === 'contain') {
+    const scale = Math.min(
+      input.frame.displayWidth / sourceWidth,
+      input.frame.displayHeight / sourceHeight
+    );
+    input.imageTarget.set({
+      width: sourceWidth,
+      height: sourceHeight,
+      cropX: 0,
+      cropY: 0,
+      scaleX: scale * input.frame.scaleSignX,
+      scaleY: scale * input.frame.scaleSignY,
+      clipPath: input.frame.clipPath,
+      originSrc: input.originSrc,
+    });
+    input.imageTarget.setPositionByOrigin(input.frame.center, 'center', 'center');
+    return;
+  }
+
+  const targetRatio = input.frame.displayWidth / input.frame.displayHeight;
+  const sourceRatio = sourceWidth / sourceHeight;
+  let cropWidth = sourceWidth;
+  let cropHeight = sourceHeight;
+  let cropX = 0;
+  let cropY = 0;
+
+  if (sourceRatio > targetRatio) {
+    cropWidth = sourceHeight * targetRatio;
+    cropX = (sourceWidth - cropWidth) / 2;
+  } else if (sourceRatio < targetRatio) {
+    cropHeight = sourceWidth / targetRatio;
+    cropY = (sourceHeight - cropHeight) / 2;
+  }
+
+  const scale = input.frame.displayWidth / Math.max(1, cropWidth);
+  input.imageTarget.set({
+    width: cropWidth,
+    height: cropHeight,
+    cropX,
+    cropY,
+    scaleX: scale * input.frame.scaleSignX,
+    scaleY: scale * input.frame.scaleSignY,
+    clipPath: input.frame.clipPath,
+    originSrc: input.originSrc,
+  });
+  input.imageTarget.setPositionByOrigin(input.frame.center, 'center', 'center');
+}
+
 async function buildPostProcessedImageSrc(
   action: DesignerAiPatchReplaceImageAction,
   imageTarget: fabric.Image
@@ -203,29 +284,20 @@ async function applyReplaceImageAction(
     extension?: unknown;
     originSrc?: string;
   };
-  const width = imageTarget.get('width');
-  const height = imageTarget.get('height');
-  const scaleX = imageTarget.get('scaleX') || 1;
-  const scaleY = imageTarget.get('scaleY') || 1;
-  const clipPath = imageTarget.get('clipPath');
-  const cropX = imageTarget.get('cropX') || 0;
-  const cropY = imageTarget.get('cropY') || 0;
+  const frame = resolveImageFrame(imageTarget);
+  const fit = resolveImageReplacementFit(action);
   const nextSrc = await buildPostProcessedImageSrc(action, imageTarget);
 
   await new Promise<void>((resolve) => {
     imageTarget.setSrc(
       nextSrc,
       () => {
-        const nextWidth = imageTarget.get('width') || width || 1;
-        const nextHeight = imageTarget.get('height') || height || 1;
-        if (width && height) {
-          imageTarget.set('scaleX', (width * scaleX) / nextWidth);
-          imageTarget.set('scaleY', (height * scaleY) / nextHeight);
-        }
-        imageTarget.set({
-          clipPath,
-          cropX,
-          cropY,
+        fitImageIntoFrame({
+          imageTarget,
+          frame,
+          sourceWidth: Number(imageTarget.get('width') || frame.width),
+          sourceHeight: Number(imageTarget.get('height') || frame.height),
+          fit,
           originSrc: nextSrc,
         });
         resolve();
