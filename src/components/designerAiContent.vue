@@ -122,7 +122,8 @@
                 v-for="option in workModeOptions"
                 :key="option.value"
                 :type="workMode === option.value ? 'primary' : 'default'"
-                @click="workMode = option.value"
+                :disabled="option.disabled"
+                @click="setWorkMode(option)"
               >
                 {{ option.label }}
               </Button>
@@ -239,6 +240,11 @@ type DesignerAiConversationMessage = {
 };
 
 type DesignerAiWorkMode = 'auto' | 'overall' | 'layer';
+type DesignerAiWorkModeOption = {
+  value: DesignerAiWorkMode;
+  label: string;
+  disabled?: boolean;
+};
 
 const DESIGNER_AI_WELCOME_MESSAGE = '您好，我是您的专属智能体设计师';
 
@@ -294,9 +300,9 @@ const isDirectImageMode = computed(() => {
 
   return shouldUseLayerMode(prompt.value);
 });
-const workModeOptions: Array<{ value: DesignerAiWorkMode; label: string }> = [
+const workModeOptions: DesignerAiWorkModeOption[] = [
   { value: 'auto', label: '自动' },
-  { value: 'overall', label: '总体设计' },
+  { value: 'overall', label: '总体设计', disabled: true },
   { value: 'layer', label: '图层设计' },
 ];
 const workModeHint = computed(() => {
@@ -304,7 +310,7 @@ const workModeHint = computed(() => {
   const layerLabel = selection?.label ? `「${selection.label}」` : '';
 
   if (workMode.value === 'overall') {
-    return '总体设计：从需求拆解整张设计，不依赖选中图层。';
+    return '总体设计暂时禁用，当前先使用图层设计或普通聊天。';
   }
 
   if (workMode.value === 'layer') {
@@ -315,7 +321,7 @@ const workModeHint = computed(() => {
 
   return selection
     ? `自动：局部修改会优先作用于 ${layerLabel}。`
-    : '自动：普通聊天或整体设计；局部修改请先选中图层。';
+    : '自动：普通聊天；局部修改请先选中图层。';
 });
 const isActivated = computed(() => {
   return (
@@ -524,6 +530,14 @@ function formatToolCall(toolCall: DesignerAssistantTurnResponse['toolCalls'][num
     ? toolCall.brief.targetRoles.join('、')
     : '';
   return `图层规划${targetRoles ? ` · ${targetRoles}` : ''}`;
+}
+
+function setWorkMode(option: DesignerAiWorkModeOption) {
+  if (option.disabled) {
+    return;
+  }
+
+  workMode.value = option.value;
 }
 
 function clearPolling() {
@@ -1004,7 +1018,7 @@ function isOverallDesignIntent(promptValue: string) {
     return false;
   }
 
-  return /海报|价格表|详情页|整张|整套|整体|版式|排版|设计|生成|做一张|做一个|poster|banner|layout|design/.test(
+  return /海报|价格表|详情页|整张|整套|整体|整页|版式|排版|多图层|设计图|poster|banner|layout|design/.test(
     normalizedPrompt
   );
 }
@@ -1033,6 +1047,19 @@ function shouldAskForLayerSelection(promptValue: string) {
   }
 
   return !activeCanvasSelection.value && isLayerEditIntent(normalizedPrompt);
+}
+
+function shouldBlockOverallDesign(promptValue: string) {
+  const normalizedPrompt = String(promptValue || '').trim();
+  if (!normalizedPrompt) {
+    return false;
+  }
+
+  if (shouldUseLayerMode(normalizedPrompt)) {
+    return false;
+  }
+
+  return workMode.value === 'overall' || isOverallDesignIntent(normalizedPrompt);
 }
 
 function inferSelectedLayerRole(selection: ActiveCanvasSelection): DesignerAiTargetRole {
@@ -1081,6 +1108,10 @@ function buildAssistantTargets(promptValue: string) {
   }
 
   if (workMode.value === 'auto' && !isOverallDesignIntent(promptValue)) {
+    return [];
+  }
+
+  if (shouldBlockOverallDesign(promptValue)) {
     return [];
   }
 
@@ -1393,13 +1424,28 @@ async function submitJob() {
   const userPrompt = prompt.value.trim();
   syncDirectImageSelection();
 
+  if (shouldBlockOverallDesign(userPrompt)) {
+    appendConversationEntry('user', '你', userPrompt);
+    prompt.value = '';
+    appendConversationEntry(
+      'assistant',
+      'AI',
+      '总体设计暂时禁用。当前请先使用「图层设计」修改选中的图片图层，或直接和我讨论设计思路。'
+    );
+    pendingQuickAction.value = null;
+    if (workMode.value === 'overall') {
+      workMode.value = 'auto';
+    }
+    return;
+  }
+
   if (shouldAskForLayerSelection(userPrompt)) {
     appendConversationEntry('user', '你', userPrompt);
     prompt.value = '';
     appendConversationEntry(
       'assistant',
       'AI',
-      '请先选中要修改的图层，或切换到「总体设计」让我重新规划整张设计。'
+      '请先选中要修改的图层，或直接和我说明你想改哪个图层。'
     );
     pendingQuickAction.value = null;
     return;

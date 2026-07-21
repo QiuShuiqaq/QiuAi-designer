@@ -1,8 +1,10 @@
 {
-  "name": "view-ui-project-ts",
+  "name": "qiuai-designer",
+  "productName": "QiuAi Designer",
   "private": true,
-  "version": "1.1.0",
-  "description": "a template project for vue3, ViewUIPlus, TypeScript and Vite.",
+  "version": "1.0.0",
+  "description": "QiuAi Designer desktop poster and image design tool.",
+  "main": "electron/main.cjs",
   "packageManager": "pnpm@8.4.0",
   "scripts": {
     "preinstall": "npx only-allow pnpm",
@@ -11,11 +13,13 @@
     "dev:staging": "vite serve --mode=staging",
     "dev:prod": "vite serve --mode=production",
     "build": "vite build",
+    "build:desktop": "vite build --mode=desktop",
     "collect:local-templates": "node scripts/collect-local-templates.mjs",
     "build:sdk": "pnpm -C packages/core build",
     "build:staging": "vite build --mode=staging",
     "preview": "pnpm build && vite preview",
     "preview:staging": "pnpm build:staging && vite preview --mode=staging",
+    "package:win": "vite build --mode=desktop && electron-builder --win nsis portable --x64",
     "prepare": "husky install",
     "test": "pnpm -C packages/core test"
   },
@@ -58,6 +62,8 @@
     "@vitejs/plugin-vue": "^4.1.0",
     "@vitejs/plugin-vue-jsx": "^3.0.1",
     "autoprefixer": "^10.4.16",
+    "electron": "30.0.9",
+    "electron-builder": "24.13.3",
     "eslint": "^7.32.0",
     "eslint-config-prettier": "^8.6.0",
     "eslint-plugin-prettier": "^4.2.1",
@@ -85,6 +91,48 @@
   "pnpm": {
     "overrides": {
       "@jridgewell/gen-mapping": "0.3.5"
+    }
+  },
+  "build": {
+    "appId": "com.qiuai.designer",
+    "productName": "QiuAi Designer",
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false,
+    "directories": {
+      "output": "../package/QiuAi-designer1.0.0-win"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "icon": "build/icons/app-icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icons/app-icon.ico",
+      "uninstallerIcon": "build/icons/app-icon.ico",
+      "runAfterFinish": true
     }
   }
 }

@@ -18,12 +18,13 @@ import autoprefixer from 'autoprefixer';
 import svgLoader from 'vite-svg-loader';
 import viteCompression from 'vite-plugin-compression';
 
-const config = ({ mode }) => {
-  const isProd = mode === 'production';
+const config = ({ command, mode }) => {
+  const isDesktop = mode === 'desktop';
+  const isProd = command === 'build';
   const envPrefix = 'APP_';
   const { APP_TITLE = '', APP_BASE_PATH } = loadEnv(mode, process.cwd(), envPrefix);
   return {
-    base: isProd ? APP_BASE_PATH : '/',
+    base: isDesktop ? './' : isProd ? APP_BASE_PATH : '/',
     plugins: [
       vue(),
       autoImports({
