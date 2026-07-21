@@ -181,6 +181,7 @@ type DirectImageSelection = {
   width: number;
   height: number;
   sourceUrl: string;
+  sourceDataUrl?: string;
 };
 
 type DesignerAiConversationRole = 'assistant' | 'user' | 'error';
@@ -479,6 +480,15 @@ async function restoreActivationIfNeeded() {
   }
 }
 
+async function ensurePlatformSessionReady() {
+  await loadActivationStatus();
+  if (activationStatus.value?.status === 'not_logged_in') {
+    await restoreActivationIfNeeded();
+  }
+
+  return isActivated.value;
+}
+
 async function loadCapabilities() {
   capabilities.value = await getDesignerAiCapabilities();
   if (!supportedLanguages.value.includes(language.value)) {
@@ -518,6 +528,81 @@ function formatErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function isDataImageUrl(value: string) {
+  return /^data:image\/[^;]+;base64,/i.test(String(value || '').trim());
+}
+
+function isLocalOnlyImageSource(value: string) {
+  const source = String(value || '').trim();
+  if (!source || isDataImageUrl(source)) {
+    return false;
+  }
+
+  if (/^blob:/i.test(source)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(source);
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === 'localhost' ||
+      host === '0.0.0.0' ||
+      host === '::1' ||
+      host.endsWith('.local') ||
+      /^127\./.test(host) ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+    );
+  } catch {
+    return !/^https?:\/\//i.test(source);
+  }
+}
+
+function exportImageObjectDataUrl(
+  activeObject: {
+    toDataURL?: (options?: Record<string, unknown>) => string;
+    getElement?: () => unknown;
+    _element?: unknown;
+  } & Record<string, unknown>
+) {
+  try {
+    const objectDataUrl = String(
+      activeObject.toDataURL?.({
+        format: 'png',
+        multiplier: 1,
+      }) || ''
+    ).trim();
+    if (isDataImageUrl(objectDataUrl)) {
+      return objectDataUrl;
+    }
+  } catch {
+    // Canvas may be tainted by cross-origin assets. Public URLs can still be used.
+  }
+
+  const imageElement = activeObject.getElement?.() || activeObject._element;
+  if (!(imageElement instanceof HTMLImageElement) || !imageElement.naturalWidth) {
+    return '';
+  }
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = imageElement.naturalWidth;
+    canvas.height = imageElement.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return '';
+    }
+
+    context.drawImage(imageElement, 0, 0);
+    const dataUrl = canvas.toDataURL('image/png');
+    return isDataImageUrl(dataUrl) ? dataUrl : '';
+  } catch {
+    return '';
+  }
+}
+
 function getActiveImageObject() {
   const activeObject = canvasEditor.canvas?.getActiveObject?.() as
     | ({
@@ -527,6 +612,9 @@ function getActiveImageObject() {
         originSrc?: string;
         getSrc?: () => string;
         get?: (key: string) => unknown;
+        toDataURL?: (options?: Record<string, unknown>) => string;
+        getElement?: () => unknown;
+        _element?: unknown;
       } & Record<string, unknown>)
     | null;
 
@@ -547,6 +635,7 @@ function getActiveImageObject() {
     width: Number(activeObject.get?.('width') || 0),
     height: Number(activeObject.get?.('height') || 0),
     sourceUrl,
+    sourceDataUrl: exportImageObjectDataUrl(activeObject),
   };
 }
 
@@ -576,10 +665,8 @@ function shouldUseDirectImageMode(promptValue: string) {
     return false;
   }
 
-  const keywords = [
+  const editKeywords = [
     '换背景',
-    '背景',
-    '场景',
     '模特',
     '抠图',
     '去除',
@@ -602,10 +689,11 @@ function shouldUseDirectImageMode(promptValue: string) {
     '补全',
   ];
 
-  return keywords.some((keyword) => normalizedPrompt.includes(keyword));
+  return editKeywords.some((keyword) => normalizedPrompt.includes(keyword));
 }
 
 function buildDirectImageEditRequest(input: {
+  message: string;
   width: number;
   height: number;
   conversationHistory?: DesignerAiConversationMessage[];
@@ -617,6 +705,18 @@ function buildDirectImageEditRequest(input: {
   const selectedImage = directImageSelection.value;
   if (!selectedImage) {
     throw new Error('请先选择一个图片图层。');
+  }
+
+  if (!selectedImage.sourceUrl && !selectedImage.sourceDataUrl) {
+    throw new Error(
+      '当前图片图层缺少可用于 AI 编辑的图片来源，请重新选择图片或先生成一张远程图片后再编辑。'
+    );
+  }
+
+  if (isLocalOnlyImageSource(selectedImage.sourceUrl) && !selectedImage.sourceDataUrl) {
+    throw new Error(
+      '当前图片是浏览器临时地址，服务端 AI 无法读取。请先使用平台生成图片，或换成可访问的远程图片后再编辑。'
+    );
   }
 
   const snapshotObjects = Array.isArray(input.snapshot.objects) ? input.snapshot.objects : [];
@@ -634,6 +734,8 @@ function buildDirectImageEditRequest(input: {
         ...item,
         src: selectedImage.sourceUrl || item.src,
         originSrc: selectedImage.sourceUrl || item.originSrc || item.src,
+        sourceDataUrl: selectedImage.sourceDataUrl || item.sourceDataUrl,
+        aiSourceDataUrl: selectedImage.sourceDataUrl || item.aiSourceDataUrl,
         extensionType: 'ai-slot',
         extension: {
           ...extension,
@@ -659,7 +761,7 @@ function buildDirectImageEditRequest(input: {
     conversationId: templateId.value || 'local-current',
     templateId: templateId.value || 'direct-image-edit',
     language: language.value,
-    message: prompt.value.trim(),
+    message: input.message,
     conversationHistory: (input.conversationHistory || conversationMessages.value).slice(-12),
     selection: {
       objectId: selectedImage.id,
@@ -765,10 +867,13 @@ async function pollJob(jobId: string) {
 
       if (job.status === 'failed' || job.status === 'cancelled') {
         isPolling.value = false;
-        if (job.error?.message) {
-          errorMessage.value = job.error.message;
-          appendConversationEntry('error', '错误', job.error.message);
-        }
+        const message =
+          job.error?.message ||
+          (job.status === 'cancelled'
+            ? 'AI 任务已取消。'
+            : 'AI 生图失败。请检查源图是否可访问、提示词是否合规，或稍后重试。');
+        errorMessage.value = message;
+        appendConversationEntry('error', '错误', message);
         return;
       }
 
@@ -776,6 +881,7 @@ async function pollJob(jobId: string) {
     } catch (error) {
       isPolling.value = false;
       errorMessage.value = formatErrorMessage(error, '任务轮询失败');
+      appendConversationEntry('error', '错误', errorMessage.value);
     }
   };
 
@@ -783,6 +889,29 @@ async function pollJob(jobId: string) {
 }
 
 async function submitJob() {
+  if (isSubmitting.value || isPolling.value) {
+    return;
+  }
+
+  errorMessage.value = '';
+
+  try {
+    const sessionReady = await ensurePlatformSessionReady();
+    if (!sessionReady) {
+      const restoreErrorMessage = errorMessage.value;
+      errorMessage.value =
+        restoreErrorMessage || '当前设备未激活，无法提交 AI 任务。请先在“我的”中完成授权激活。';
+      if (!restoreErrorMessage) {
+        appendConversationEntry('error', '错误', errorMessage.value);
+      }
+      return;
+    }
+  } catch (error) {
+    errorMessage.value = formatErrorMessage(error, 'AI 会话校验失败');
+    appendConversationEntry('error', '错误', errorMessage.value);
+    return;
+  }
+
   if (!canSubmit.value) {
     if (!isActivated.value) {
       errorMessage.value = '当前设备未激活，无法提交 AI 任务。请先在“我的”中完成授权激活。';
@@ -796,46 +925,54 @@ async function submitJob() {
   isSubmitting.value = true;
   errorMessage.value = '';
 
-  appendConversationEntry('user', '你', userPrompt);
-
   try {
     const { width, height, snapshot } = getCanvasSnapshot();
-    const response = await createDesignerAssistantTurn(
-      isDirectImageMode.value
-        ? buildDirectImageEditRequest({
+    const requestPayload = isDirectImageMode.value
+      ? buildDirectImageEditRequest({
+          message: userPrompt,
+          width,
+          height,
+          conversationHistory,
+          snapshot,
+        })
+      : {
+          conversationId: templateId.value || 'local-current',
+          templateId: templateId.value,
+          language: language.value,
+          message: userPrompt,
+          conversationHistory,
+          selection: getActiveCanvasSelection(),
+          targets: buildSuggestedTargets(enabledSlots.value, userPrompt).slots.map((slot) => ({
+            slotId: slot.id,
+            role: slot.role,
+            mode: slot.aiMode,
+            targetSource: 'ai-slot' as const,
+          })),
+          canvas: {
             width,
             height,
-            conversationHistory,
-            snapshot,
-          })
-        : {
-            conversationId: templateId.value || 'local-current',
-            templateId: templateId.value,
-            language: language.value,
-            message: userPrompt,
-            conversationHistory,
-            selection: getActiveCanvasSelection(),
-            targets: buildSuggestedTargets(enabledSlots.value, userPrompt).slots.map((slot) => ({
-              slotId: slot.id,
-              role: slot.role,
-              mode: slot.aiMode,
-              targetSource: 'ai-slot' as const,
-            })),
-            canvas: {
-              width,
-              height,
-            },
-            templateSnapshot: snapshot,
-            clientRequestId: uuidv4(),
-            actionKey: '',
-            actionCategory: 'edit',
-            preserveLayout: true,
-            candidateCount: 1,
-          }
-    );
+          },
+          templateSnapshot: snapshot,
+          clientRequestId: uuidv4(),
+          actionKey: '',
+          actionCategory: 'edit',
+          preserveLayout: true,
+          candidateCount: 1,
+        };
+
+    appendConversationEntry('user', '你', userPrompt);
+    prompt.value = '';
+
+    const response = await createDesignerAssistantTurn(requestPayload);
 
     lastAssistantTurn.value = response;
     appendConversationEntry('assistant', 'AI', response.reply || '收到。');
+
+    if (response.error?.message) {
+      errorMessage.value = response.error.message;
+      appendConversationEntry('error', '错误', response.error.message);
+      return;
+    }
 
     if (response.jobIds?.[0]) {
       currentJob.value = await getDesignerAiJob(response.jobIds[0]);
@@ -943,10 +1080,20 @@ onBeforeUnmount(() => {
 <style scoped lang="less">
 .designer-ai-content {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.designer-ai-content:not(.designer-ai-content--embedded) {
+  height: min(72vh, 760px);
 }
 
 .designer-ai-content--embedded {
+  height: 100%;
   padding: 4px 0 16px;
+  overflow: hidden;
 }
 
 .designer-ai-content__header {
@@ -972,13 +1119,182 @@ onBeforeUnmount(() => {
 
 .designer-ai-content__body {
   position: relative;
-  min-height: 260px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  gap: 14px;
 }
 
 .designer-ai-content--embedded .designer-ai-content__body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.designer-ai-content__chat {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.94) 0%, #ffffff 100%);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.designer-ai-content__messages {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
+.designer-ai-content__messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.designer-ai-content__messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.designer-ai-content__messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-color: rgba(148, 163, 184, 0.5);
+}
+
+.designer-ai-content__message,
+.designer-ai-content__job-inline,
+.designer-ai-content__assistant-summary {
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.designer-ai-content__message {
+  display: flex;
+  max-width: min(86%, 720px);
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.designer-ai-content__message span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.designer-ai-content__message p {
+  margin: 0;
+  color: #0f172a;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.designer-ai-content__message--assistant {
+  align-self: flex-start;
+}
+
+.designer-ai-content__message--user {
+  align-self: flex-end;
+  border-color: rgba(191, 219, 254, 0.95);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98) 0%, rgba(224, 242, 254, 0.96) 100%);
+}
+
+.designer-ai-content__message--error {
+  align-self: flex-start;
+  border-color: rgba(248, 113, 113, 0.28);
+  background: linear-gradient(180deg, rgba(254, 242, 242, 0.98) 0%, rgba(255, 247, 247, 0.96) 100%);
+}
+
+.designer-ai-content__job-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.designer-ai-content__assistant-summary {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  padding: 14px;
+}
+
+.designer-ai-content__assistant-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.designer-ai-content__assistant-summary-reply {
+  margin: 0;
+  color: #1e293b;
+  line-height: 1.7;
+}
+
+.designer-ai-content__assistant-summary-block {
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.designer-ai-content__assistant-summary-line {
+  margin-top: 6px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.designer-ai-content__assistant-summary-note {
+  margin-top: 6px;
+  color: #b45309;
+  line-height: 1.6;
+}
+
+.designer-ai-content__composer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.designer-ai-content__composer :deep(.ivu-input) {
+  border-radius: 14px;
+}
+
+.designer-ai-content__composer-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.designer-ai-content__composer-foot small {
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.designer-ai-content__composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .designer-ai-content__summary {
@@ -1179,10 +1495,23 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
+  .designer-ai-content__chat {
+    padding: 12px;
+  }
+
   .designer-ai-content__overview,
   .designer-ai-content__summary,
   .designer-ai-content__targets {
     grid-template-columns: 1fr;
+  }
+
+  .designer-ai-content__composer-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .designer-ai-content__composer-actions {
+    justify-content: flex-start;
   }
 }
 </style>

@@ -26,6 +26,7 @@
 </template>
 
 <script name="Home" setup lang="ts">
+import { onMounted, onUnmounted, provide, reactive } from 'vue';
 import Top from './components/top/index.vue';
 import Left from './components/left/index.vue';
 import Right from './components/right/index.vue';
