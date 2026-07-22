@@ -6,7 +6,7 @@
     <div v-if="embedded" class="platform-center-content__header">
       <div>
         <h3>我的</h3>
-        <p>这里统一处理激活、订阅、钱包和订单。</p>
+        <p>这里统一处理激活、订阅、AI 点和订单。</p>
       </div>
       <Button size="small" @click="refreshAll" :loading="isBootstrapping">刷新</Button>
     </div>
@@ -48,14 +48,21 @@
             <small>{{ formattedExpireAt }}</small>
           </div>
           <div class="platform-center-content__overview-card">
-            <span>图片余额</span>
-            <strong>{{ formatBalance(walletSummary?.imageBalanceCny) }}</strong>
-            <small>可直接用于图片生成</small>
+            <span>AI点余额</span>
+            <strong>
+              {{
+                formatDesignerAiBalancePoints(
+                  walletSummary?.imageBalanceCny,
+                  designerAiPointsPerCny
+                )
+              }}
+            </strong>
+            <small>用于生成背景、元素、艺术字和图层改图</small>
           </div>
         </div>
         <div class="platform-center-content__quick-actions">
           <Button size="small" @click="setActiveTab('license')">激活</Button>
-          <Button size="small" @click="setActiveTab('wallet')">钱包</Button>
+          <Button size="small" @click="setActiveTab('wallet')">AI点</Button>
           <Button size="small" @click="setActiveTab('purchase')">订阅</Button>
           <Button size="small" @click="refreshAll" :loading="isBootstrapping">刷新</Button>
         </div>
@@ -153,32 +160,42 @@
           </div>
         </TabPane>
 
-        <TabPane label="钱包" name="wallet">
+        <TabPane label="AI点" name="wallet">
           <div v-if="!isActivated" class="platform-center-content__empty">
             <Alert type="info" show-icon>
-              <template #desc>当前未激活，钱包余额需要在激活后读取。</template>
+              <template #desc>当前未激活，AI 点余额需要在激活后读取。</template>
             </Alert>
           </div>
 
           <template v-else>
             <div class="platform-center-content__wallet">
               <div class="platform-center-content__wallet-card">
-                <span>文本余额</span>
+                <span>AI点余额</span>
+                <strong>
+                  {{
+                    formatDesignerAiBalancePoints(
+                      walletSummary?.imageBalanceCny,
+                      designerAiPointsPerCny
+                    )
+                  }}
+                </strong>
+                <small>设计生图、图层改图成功后消耗</small>
+              </div>
+              <div class="platform-center-content__wallet-card">
+                <span>文案辅助额度</span>
                 <strong>{{ formatBalance(walletSummary?.textBalanceCny) }}</strong>
+                <small>用于文案生成等轻量设计链路</small>
               </div>
               <div class="platform-center-content__wallet-card">
-                <span>图片余额</span>
-                <strong>{{ formatBalance(walletSummary?.imageBalanceCny) }}</strong>
-              </div>
-              <div class="platform-center-content__wallet-card">
-                <span>视频余额</span>
+                <span>视频额度</span>
                 <strong>{{ formatBalance(walletSummary?.videoBalanceCny) }}</strong>
+                <small>预留给视频类能力</small>
               </div>
             </div>
 
             <section class="platform-center-content__panel">
               <div class="platform-center-content__panel-head">
-                <h4>钱包直充</h4>
+                <h4>AI点直充</h4>
                 <Button
                   size="small"
                   :loading="isTopupRefreshing"
@@ -191,15 +208,16 @@
 
               <div class="platform-center-content__inline-form">
                 <Select v-model="topupForm.walletType">
-                  <Option value="image">图片钱包</Option>
-                  <Option value="text">文本钱包</Option>
-                  <Option value="video">视频钱包</Option>
+                  <Option value="image">AI点钱包</Option>
+                  <Option value="text">文案辅助额度</Option>
+                  <Option value="video">视频额度</Option>
                 </Select>
                 <Input v-model="topupForm.amountCny" placeholder="充值金额，单位 CNY" />
                 <Button type="primary" :loading="isTopupSubmitting" @click="submitTopupOrder">
                   创建充值订单
                 </Button>
               </div>
+              <small class="platform-center-content__topup-tip">{{ topupAmountTip }}</small>
 
               <div v-if="currentTopupOrder" class="platform-center-content__order-card">
                 <div class="platform-center-content__order-head">
@@ -209,7 +227,7 @@
                 <div class="platform-center-content__order-meta">
                   <span>订单号：{{ currentTopupOrder.merchantOrderNo }}</span>
                   <span>金额：{{ formatPrice(currentTopupOrder.payAmountCny) }}</span>
-                  <span>类型：{{ currentTopupOrder.walletType }}</span>
+                  <span>类型：{{ formatWalletType(currentTopupOrder.walletType) }}</span>
                 </div>
                 <div class="platform-center-content__panel-actions">
                   <Button @click="openPaymentForOrder(currentTopupOrder)">打开支付</Button>
@@ -247,7 +265,9 @@
             <section class="platform-center-content__section">
               <div class="platform-center-content__section-head">
                 <h4>订阅套餐</h4>
-                <span class="platform-center-content__section-tip">订阅包含软件授权和每月算力</span>
+                <span class="platform-center-content__section-tip">
+                  订阅包含软件授权和每月 AI 点
+                </span>
               </div>
               <div class="platform-center-content__package-grid">
                 <div
@@ -275,9 +295,20 @@
                   </p>
                   <div class="platform-center-content__package-meta">
                     <span>{{ pkg.durationDays }} 天</span>
-                    <span>图 {{ formatBalance(pkg.includedImageBalanceCny) }}</span>
-                    <span>文 {{ formatBalance(pkg.includedTextBalanceCny) }}</span>
-                    <span>视频 {{ formatBalance(pkg.includedVideoBalanceCny) }}</span>
+                    <span>
+                      {{
+                        formatDesignerAiBalancePoints(
+                          pkg.includedImageBalanceCny,
+                          designerAiPointsPerCny
+                        )
+                      }}
+                    </span>
+                    <span v-if="pkg.includedTextBalanceCny">
+                      文案辅助 {{ formatBalance(pkg.includedTextBalanceCny) }}
+                    </span>
+                    <span v-if="pkg.includedVideoBalanceCny">
+                      视频 {{ formatBalance(pkg.includedVideoBalanceCny) }}
+                    </span>
                   </div>
                   <div class="platform-center-content__panel-actions">
                     <Button
@@ -326,8 +357,14 @@
 <script setup lang="ts" name="PlatformCenterContent">
 import { Message } from 'view-ui-plus';
 
+import { formatDesignerAiBalancePoints } from '@/modules/designer-ai/ai-points';
+import {
+  designerAiBillingProfile,
+  setDesignerAiBillingProfile,
+} from '@/modules/designer-ai/billing-profile';
 import { quotePlatformAgentPrices } from '@/platform/agent';
 import { PLATFORM_PRODUCT_KEY, isPlatformApiConfigured } from '@/platform/config';
+import { getDesignerAiCapabilities } from '@/platform/designer-ai';
 import {
   createPlatformSubscriptionOrder,
   createPlatformTopupOrder,
@@ -427,6 +464,7 @@ const formattedExpireAt = computed(() => {
   if (!value) return '-';
   return new Date(value).toLocaleString();
 });
+const designerAiPointsPerCny = computed(() => designerAiBillingProfile.value?.pointsPerCny || 0);
 const shortDeviceCode = computed(() => `${deviceFingerprint.slice(0, 8)}...`);
 const agentQuoteTip = computed(() => {
   if (!activationForm.agentInviteCode.trim()) {
@@ -442,6 +480,21 @@ const agentQuoteTip = computed(() => {
   }
 
   return `已匹配代理：${agentQuote.value.agent?.displayName || '-'}`;
+});
+const topupAmountTip = computed(() => {
+  const amountCny = Number(topupForm.amountCny || 0);
+  if (!Number.isFinite(amountCny) || amountCny <= 0) {
+    return '输入充值金额后会显示到账额度预估。';
+  }
+
+  if (topupForm.walletType === 'image') {
+    return `${formatPrice(amountCny)} ≈ ${formatDesignerAiBalancePoints(
+      amountCny,
+      designerAiPointsPerCny.value
+    )}`;
+  }
+
+  return `${formatPrice(amountCny)} 将进入${formatWalletType(topupForm.walletType)}。`;
 });
 
 function emitTriggerState() {
@@ -466,6 +519,13 @@ function formatBalance(value?: number) {
 
 function formatPrice(value?: number) {
   return `CNY ${formatBalance(value)}`;
+}
+
+function formatWalletType(value?: PlatformTopupOrder['walletType']) {
+  if (value === 'image') return 'AI点钱包';
+  if (value === 'text') return '文案辅助额度';
+  if (value === 'video') return '视频额度';
+  return value || '-';
 }
 
 function findAgentQuoteItem(type: 'subscription', code: string) {
@@ -532,6 +592,15 @@ async function openPaymentForOrder(order: { paymentPayload?: PlatformOrderPaymen
 
 async function loadProductMeta() {
   productMeta.value = await getPlatformProductMeta();
+}
+
+async function loadDesignerAiBillingProfile() {
+  try {
+    const capabilities = await getDesignerAiCapabilities();
+    setDesignerAiBillingProfile(capabilities.billing || null);
+  } catch {
+    setDesignerAiBillingProfile(null);
+  }
 }
 
 async function loadActivationStatus() {
@@ -602,7 +671,7 @@ async function refreshAll() {
   packageError.value = '';
 
   try {
-    await Promise.all([loadProductMeta(), loadActivationStatus()]);
+    await Promise.all([loadProductMeta(), loadActivationStatus(), loadDesignerAiBillingProfile()]);
     await restoreActivationIfNeeded();
     await Promise.all([loadSubscriptionPackages(), loadWalletSummary()]);
     persistProfile();
@@ -1032,6 +1101,19 @@ onBeforeUnmount(() => {
 
 .platform-center-content__wallet-card span {
   color: #667085;
+  font-size: 12px;
+}
+
+.platform-center-content__wallet-card small {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.platform-center-content__topup-tip {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
   font-size: 12px;
 }
 

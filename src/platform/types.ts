@@ -363,6 +363,17 @@ export interface DesignerAiCapabilities {
   defaultImageSize?: string;
   defaultTextProvider?: string;
   defaultTextModel?: string;
+  billing?: {
+    pricingPlan?: string;
+    currency?: 'CNY' | string;
+    pointsPerCny?: number;
+    imagePointTiers?: Array<{
+      size: string;
+      label: string;
+      aiPoints: number;
+      amountCny?: number;
+    }>;
+  };
   patchVersion: 1;
   mockEnabled: boolean;
 }

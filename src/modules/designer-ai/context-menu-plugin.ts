@@ -1,6 +1,8 @@
 import { fabric } from 'fabric';
 import type { IEditor, IPluginTempl } from '@kuaitu/core';
 
+import { formatDesignerAiCostBadge, resolveDesignerAiPointTierFromProfile } from './ai-points';
+import { getDesignerAiBillingProfile } from './billing-profile';
 import { requestDesignerAiQuickAction } from './quick-actions';
 import type { DesignerAiQuickActionDetail } from './quick-actions';
 
@@ -43,6 +45,24 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
     return this.canvas.getActiveObject() as CanvasObject | null;
   }
 
+  private getCanvasImagePointCost() {
+    return resolveDesignerAiPointTierFromProfile(
+      {
+        width: this.canvas.getWidth(),
+        height: this.canvas.getHeight(),
+      },
+      getDesignerAiBillingProfile()
+    )?.aiPoints;
+  }
+
+  private withImageAiCost(text: string) {
+    return `${text} · ${formatDesignerAiCostBadge(this.getCanvasImagePointCost())}`;
+  }
+
+  private withTextAiCost(text: string) {
+    return `${text} · 服务端结算`;
+  }
+
   private emitAction(detail: DesignerAiQuickActionDetail) {
     const activeObject = this.getActiveObject();
     requestDesignerAiQuickAction({
@@ -55,7 +75,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
   private buildGenerationActions() {
     return [
       {
-        text: '生成背景',
+        text: this.withImageAiCost('生成背景'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -67,7 +87,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '生成元素',
+        text: this.withImageAiCost('生成元素'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -79,7 +99,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '生成艺术字',
+        text: this.withImageAiCost('生成艺术字'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -98,7 +118,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
 
     return [
       {
-        text: '换背景/场景',
+        text: this.withImageAiCost('换背景/场景'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -109,7 +129,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '改材质配色',
+        text: this.withImageAiCost('改材质配色'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -120,7 +140,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '清理杂项',
+        text: this.withImageAiCost('清理杂项'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -131,7 +151,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '抠图透明底',
+        text: this.withImageAiCost('抠图透明底'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -142,7 +162,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '自由描述',
+        text: this.withImageAiCost('自由描述'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -159,7 +179,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
 
     return [
       {
-        text: '重写文案',
+        text: this.withTextAiCost('重写文案'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -170,7 +190,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '强化卖点',
+        text: this.withTextAiCost('强化卖点'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -181,7 +201,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '压缩文案',
+        text: this.withTextAiCost('压缩文案'),
         hotkey: '',
         onclick: () =>
           this.emitAction({
@@ -192,7 +212,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           }),
       },
       {
-        text: '自由描述',
+        text: this.withTextAiCost('自由描述'),
         hotkey: '',
         onclick: () =>
           this.emitAction({

@@ -131,6 +131,15 @@
             <span>{{ workModeHint }}</span>
           </div>
 
+          <div class="designer-ai-content__billing-row">
+            <Tag v-if="designerAiCostPreview" color="primary">
+              {{ designerAiCostPreview.label }} ·
+              {{ formatDesignerAiCostBadge(designerAiCostPreview.points) }}
+            </Tag>
+            <Tag v-else color="success">聊天不扣点</Tag>
+            <span>{{ designerAiBillingHint }}</span>
+          </div>
+
           <Input
             v-model="prompt"
             type="textarea"
@@ -154,7 +163,7 @@
                 :loading="isSubmitting || isPolling"
                 @click="submitJob"
               >
-                发送
+                {{ designerAiSubmitLabel }}
               </Button>
             </div>
           </div>
@@ -170,6 +179,16 @@ import { useRoute } from 'vue-router';
 import { nextTick } from 'vue';
 
 import useSelect from '@/hooks/select';
+import {
+  formatDesignerAiCostBadge,
+  formatDesignerAiPoints,
+  resolveDesignerAiImageSize,
+  resolveDesignerAiPointTierFromProfile,
+} from '@/modules/designer-ai/ai-points';
+import {
+  designerAiBillingProfile,
+  setDesignerAiBillingProfile,
+} from '@/modules/designer-ai/billing-profile';
 import { applyDesignerAiPatch } from '@/modules/designer-ai/patch';
 import { onDesignerAiPanelAction } from '@/modules/designer-ai/quick-actions';
 import type { DesignerAiQuickActionDetail } from '@/modules/designer-ai/quick-actions';
@@ -244,6 +263,11 @@ type DesignerAiWorkModeOption = {
   value: DesignerAiWorkMode;
   label: string;
   disabled?: boolean;
+};
+
+type CanvasSizeReader = {
+  getWidth?: () => number;
+  getHeight?: () => number;
 };
 
 const DESIGNER_AI_WELCOME_MESSAGE = '您好，我是您的专属智能体设计师';
@@ -321,6 +345,90 @@ const workModeHint = computed(() => {
   return selection
     ? `智能聊天：局部修改会优先作用于 ${layerLabel}。`
     : '智能聊天：可直接对话；要精准改图层请先选中对象。';
+});
+const canvasImagePointTier = computed(() => {
+  const editorCanvas = (canvasEditor as unknown as { canvas?: CanvasSizeReader }).canvas;
+  return resolveDesignerAiPointTierFromProfile(
+    {
+      width: editorCanvas?.getWidth?.() || 0,
+      height: editorCanvas?.getHeight?.() || 0,
+    },
+    designerAiBillingProfile.value
+  );
+});
+const canvasImageSize = computed(() => {
+  const editorCanvas = (canvasEditor as unknown as { canvas?: CanvasSizeReader }).canvas;
+  return resolveDesignerAiImageSize({
+    width: editorCanvas?.getWidth?.() || 0,
+    height: editorCanvas?.getHeight?.() || 0,
+  });
+});
+const designerAiCostPreview = computed(() => {
+  const promptValue = prompt.value.trim();
+  if (!promptValue || shouldBlockOverallDesign(promptValue)) {
+    return null;
+  }
+
+  if (
+    pendingQuickAction.value?.category === 'material' ||
+    isDirectImageMode.value ||
+    shouldUseLayerMode(promptValue)
+  ) {
+    const tier = canvasImagePointTier.value;
+    return {
+      kind: 'image' as const,
+      label: tier ? `${tier.label} ${tier.size}` : canvasImageSize.value,
+      points: tier?.aiPoints,
+    };
+  }
+
+  if (
+    pendingQuickAction.value?.actionKey?.includes('title') ||
+    pendingQuickAction.value?.actionKey?.includes('body') ||
+    pendingQuickAction.value?.actionKey?.includes('sell') ||
+    /重写文案|强化卖点|压缩文案|标题|文案|卖点/.test(promptValue)
+  ) {
+    return {
+      kind: 'text' as const,
+      label: '文案设计',
+      points: undefined,
+    };
+  }
+
+  return null;
+});
+const designerAiSubmitLabel = computed(() => {
+  if (!designerAiCostPreview.value) {
+    return '发送';
+  }
+
+  return `发送 · ${formatDesignerAiCostBadge(designerAiCostPreview.value.points)}`;
+});
+const designerAiBillingHint = computed(() => {
+  const promptValue = prompt.value.trim();
+  if (!promptValue) {
+    return '普通聊天不扣 AI 点；设计类生成会显示预计消耗。';
+  }
+
+  if (shouldBlockOverallDesign(promptValue)) {
+    return '总体设计暂时禁用；请改用图层设计或直接聊天。';
+  }
+
+  if (designerAiCostPreview.value?.kind === 'image') {
+    if (typeof designerAiCostPreview.value.points !== 'number') {
+      return '当前为设计生图任务，具体消耗以服务端结算为准。';
+    }
+
+    return `当前画布自动匹配 ${
+      designerAiCostPreview.value.label
+    }，预计消耗 ${formatDesignerAiPoints(designerAiCostPreview.value.points)}。`;
+  }
+
+  if (designerAiCostPreview.value?.kind === 'text') {
+    return '本次为文案设计，具体消耗以服务端结算为准。';
+  }
+
+  return '普通聊天不扣 AI 点；生成背景、元素、艺术字和图层改图会扣点。';
 });
 const isActivated = computed(() => {
   return (
@@ -765,6 +873,7 @@ async function ensurePlatformSessionReady() {
 
 async function loadCapabilities() {
   capabilities.value = await getDesignerAiCapabilities();
+  setDesignerAiBillingProfile(capabilities.value.billing || null);
   if (!supportedLanguages.value.includes(language.value)) {
     language.value = supportedLanguages.value[0] || 'zh-CN';
   }
@@ -1882,6 +1991,20 @@ onBeforeUnmount(() => {
 
 .designer-ai-content__mode-tabs {
   flex: 0 0 auto;
+}
+
+.designer-ai-content__billing-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.designer-ai-content__billing-row span {
+  min-width: 0;
 }
 
 .designer-ai-content__composer :deep(.ivu-input) {
