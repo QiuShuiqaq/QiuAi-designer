@@ -301,8 +301,7 @@ const isDirectImageMode = computed(() => {
   return shouldUseLayerMode(prompt.value);
 });
 const workModeOptions: DesignerAiWorkModeOption[] = [
-  { value: 'auto', label: '自动' },
-  { value: 'overall', label: '总体设计', disabled: true },
+  { value: 'auto', label: '智能聊天' },
   { value: 'layer', label: '图层设计' },
 ];
 const workModeHint = computed(() => {
@@ -310,18 +309,18 @@ const workModeHint = computed(() => {
   const layerLabel = selection?.label ? `「${selection.label}」` : '';
 
   if (workMode.value === 'overall') {
-    return '总体设计暂时禁用，当前先使用图层设计或普通聊天。';
+    return '总体设计已禁用，当前请使用图层设计或智能聊天。';
   }
 
   if (workMode.value === 'layer') {
     return selection
-      ? `图层设计：当前目标 ${layerLabel}。`
-      : '图层设计：请先在画布选中要修改的图层。';
+      ? `图层设计：当前目标 ${layerLabel}，只会作用于它。`
+      : '图层设计：请先在画布选中要修改的图层，或右键打开快捷操作。';
   }
 
   return selection
-    ? `自动：局部修改会优先作用于 ${layerLabel}。`
-    : '自动：普通聊天；局部修改请先选中图层。';
+    ? `智能聊天：局部修改会优先作用于 ${layerLabel}。`
+    : '智能聊天：可直接对话；要精准改图层请先选中对象。';
 });
 const isActivated = computed(() => {
   return (
@@ -510,6 +509,19 @@ function formatAssistantMode(mode: string) {
   return '聊天回答';
 }
 
+function formatTargetRoleLabel(role?: string) {
+  if (role === 'background') return '背景';
+  if (role === 'title') return '标题';
+  if (role === 'subtitle') return '副标题';
+  if (role === 'body-text') return '正文';
+  if (role === 'cta') return '按钮';
+  if (role === 'price') return '价格';
+  if (role === 'product-image') return '商品图';
+  if (role === 'logo') return 'Logo';
+  if (role === 'decoration') return '装饰';
+  return role || '';
+}
+
 function assistantModeColor(mode: string) {
   if (mode === 'quick_image') return 'success';
   if (mode === 'layered_design') return 'warning';
@@ -519,7 +531,9 @@ function assistantModeColor(mode: string) {
 
 function formatToolCall(toolCall: DesignerAssistantTurnResponse['toolCalls'][number]) {
   if (toolCall.type === 'generate_image') {
-    return `生成图像 · ${toolCall.model}${toolCall.targetRole ? ` · ${toolCall.targetRole}` : ''}`;
+    return `生成图像 · ${toolCall.model}${
+      toolCall.targetRole ? ` · ${formatTargetRoleLabel(toolCall.targetRole)}` : ''
+    }`;
   }
 
   if (toolCall.type === 'revise_layer') {
@@ -661,7 +675,7 @@ function getKeywordMap() {
       'product',
     ],
     logo: ['logo', '品牌', '标志'],
-    decoration: ['装饰', '图标', 'icon', '点缀', '线条'],
+    decoration: ['装饰', '图标', 'icon', '点缀', '线条', '元素', '贴纸', '艺术字', '字效'],
   } as const;
 }
 
@@ -677,8 +691,15 @@ function buildSuggestedTargets(nextSlots: DesignerAiTemplateSlot[], promptValue:
   });
 
   const priorityRoles = ['background', 'title', 'subtitle', 'body-text', 'cta', 'price'];
+  const secondaryPriorityRoles = ['product-image', 'logo', 'decoration'];
   const rankedSlots = [...nextSlots].sort((a, b) => {
-    return priorityRoles.indexOf(a.role) - priorityRoles.indexOf(b.role);
+    const leftIndex = priorityRoles.indexOf(a.role);
+    const rightIndex = priorityRoles.indexOf(b.role);
+    const leftSecondaryIndex = secondaryPriorityRoles.indexOf(a.role);
+    const rightSecondaryIndex = secondaryPriorityRoles.indexOf(b.role);
+    const normalizedLeft = leftIndex >= 0 ? leftIndex : 100 + Math.max(leftSecondaryIndex, 0);
+    const normalizedRight = rightIndex >= 0 ? rightIndex : 100 + Math.max(rightSecondaryIndex, 0);
+    return normalizedLeft - normalizedRight;
   });
 
   const explicitMatches = rankedSlots.filter((slot) => matchedRoles.has(slot.role));
@@ -1102,6 +1123,10 @@ function buildSelectedLayerTarget(selection: ActiveCanvasSelection) {
 }
 
 function buildAssistantTargets(promptValue: string) {
+  if (pendingQuickAction.value?.category === 'material') {
+    return [];
+  }
+
   const selection = activeCanvasSelection.value;
   if (selection && shouldUseLayerMode(promptValue)) {
     return [buildSelectedLayerTarget(selection)];
@@ -1239,19 +1264,19 @@ async function refreshSlots() {
     if (!nextParsedSlots.slots.length) {
       appendConversationEntry(
         'assistant',
-        '??',
+        'AI',
         directImageSelection.value
-          ? '?????? AI ??????????????????'
-          : '????????? AI ?????????????????? AI ????????'
+          ? '当前画布没有识别到 AI 图层，但可以直接对选中的图片图层进行修改。'
+          : '当前画布没有识别到 AI 图层。你可以先选中图片图层，或右键生成背景、元素、艺术字。'
       );
       return;
     }
 
     if (!nextParsedSlots.slots.some((slot) => slot.aiEnabled)) {
-      appendConversationEntry('assistant', '??', '?????? AI ????????????????');
+      appendConversationEntry('assistant', 'AI', '当前模板的 AI 图层未启用，请先选择可编辑图层。');
     }
   } catch (error) {
-    errorMessage.value = formatErrorMessage(error, '??????');
+    errorMessage.value = formatErrorMessage(error, '解析 AI 图层失败');
   }
 }
 
@@ -1430,7 +1455,7 @@ async function submitJob() {
     appendConversationEntry(
       'assistant',
       'AI',
-      '总体设计暂时禁用。当前请先使用「图层设计」修改选中的图片图层，或直接和我讨论设计思路。'
+      '总体设计暂时禁用。当前请使用「图层设计」修改选中的图片图层，或右键生成背景、元素、艺术字。'
     );
     pendingQuickAction.value = null;
     if (workMode.value === 'overall') {

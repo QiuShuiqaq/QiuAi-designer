@@ -37,7 +37,7 @@
     <img src="https://img.shields.io/github/license/ikuaitu/vue-fabric-editor?style=flat" alt="license" />
   </a>
   <a href="https://www.kuaitu.cc/" target="_blank">
-    <img src="https://img.shields.io/website?url=http%3A%2F%2Fpro.kuaitu.cc%2F" alt="快图设计网站" />
+    <img src="https://img.shields.io/website?url=http%3A%2F%2Fpro.kuaitu.cc%2F" alt="QiuAi网站" />
   </a>
 </p>
 
@@ -50,7 +50,7 @@
 
 ## 简介
 
-快图设计，vue-fabric-editor 是一款基于 fabric.js 和 Vue 开发的图片编辑器，可自定义字体、素材、设计模板、右键菜单、快捷键。
+QiuAi，vue-fabric-editor 是一款基于 fabric.js 和 Vue 开发的图片编辑器，可自定义字体、素材、设计模板、右键菜单、快捷键。
 
 [动图介绍](https://juejin.cn/post/7222141882515128375) · [介绍视频](https://www.bilibili.com/video/BV1US421A7TU/?spm_id_from=333.999.0.0)
 

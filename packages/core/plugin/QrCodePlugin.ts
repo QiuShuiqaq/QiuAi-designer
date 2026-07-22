@@ -70,7 +70,7 @@ class QrCodePlugin implements IPluginTempl {
 
   _defaultBarcodeOption() {
     return {
-      data: 'https://kuaitu.cc',
+      data: 'https://qiuaihub.com',
       width: 300,
       margin: 10,
       errorCorrectionLevel: 'M',

@@ -53,7 +53,7 @@ class BarCodePlugin implements IPluginTempl {
     return {
       value: '123456',
       format: CodeType.CODE128,
-      text: 'hi kuaitu',
+      text: 'hi QiuAi',
       textAlign: 'left',
       textPosition: 'bottom',
       fontSize: 12,

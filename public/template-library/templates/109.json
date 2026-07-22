@@ -1,6 +1,6 @@
 {
   "id": 109,
-  "name": "快图",
+  "name": "QiuAi",
   "desc": null,
   "categoryId": 7,
   "categoryName": "海报",
@@ -548,7 +548,7 @@
         "left": 269,
         "name": "图夫科技祝您新春快乐，阖家团圆，万事如意!\n\n",
         "path": null,
-        "text": "快图科技祝您新春快乐，阖家团圆，万事如意!\n\n",
+        "text": "QiuAi科技祝您新春快乐，阖家团圆，万事如意!\n\n",
         "type": "textbox",
         "angle": 0,
         "flipX": false,

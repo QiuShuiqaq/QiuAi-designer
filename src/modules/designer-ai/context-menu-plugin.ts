@@ -52,6 +52,47 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
     });
   }
 
+  private buildGenerationActions() {
+    return [
+      {
+        text: '生成背景',
+        hotkey: '',
+        onclick: () =>
+          this.emitAction({
+            actionKey: 'generate-background',
+            label: '生成背景',
+            category: 'material',
+            prompt:
+              '请生成一张适合当前画布的背景图，风格干净统一，给主体和文字留出展示空间，不要添加文字、水印或边框。',
+          }),
+      },
+      {
+        text: '生成元素',
+        hotkey: '',
+        onclick: () =>
+          this.emitAction({
+            actionKey: 'generate-element',
+            label: '生成元素',
+            category: 'material',
+            prompt:
+              '请生成一个可用于海报排版的独立设计元素或装饰素材，主体清晰，边缘干净，适合继续移动、缩放和组合。',
+          }),
+      },
+      {
+        text: '生成艺术字',
+        hotkey: '',
+        onclick: () =>
+          this.emitAction({
+            actionKey: 'generate-art-text',
+            label: '生成艺术字',
+            category: 'material',
+            prompt:
+              '请生成一组适合海报标题使用的艺术字或字效元素，视觉醒目，边缘干净，适合继续排版。文字内容我可以继续补充。',
+          }),
+      },
+    ];
+  }
+
   private buildImageActions(activeObject: CanvasObject) {
     const context = buildSelectionContext(activeObject);
 
@@ -182,8 +223,16 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
 
   contextMenu() {
     const activeObject = this.getActiveObject();
+
     if (!activeObject || activeObject.id === 'workspace') {
-      return;
+      return [
+        null,
+        {
+          text: 'AI 快捷操作',
+          hotkey: '❯',
+          subitems: this.buildGenerationActions(),
+        },
+      ];
     }
 
     const isTextObject = activeObject.type === 'textbox' || activeObject.type === 'i-text';
@@ -196,6 +245,8 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
     if (!subitems.length) {
       subitems.push(...this.buildFallbackActions(activeObject));
     }
+
+    subitems.push(...this.buildGenerationActions());
 
     return [
       null,

@@ -368,7 +368,7 @@
         "left": 80.3733,
         "name": "01\n\n",
         "path": null,
-        "text": "快图设计",
+        "text": "QiuAi",
         "type": "textbox",
         "angle": 0,
         "flipX": false,
@@ -673,7 +673,7 @@
           "二维码"
         ],
         "extension": {
-          "data": "https://kuaitu.cc",
+          "data": "https://qiuaihub.com",
           "width": 300,
           "margin": 10,
           "dotsType": "rounded",
@@ -737,7 +737,7 @@
           "条形码"
         ],
         "extension": {
-          "text": "hi kuaitu",
+          "text": "hi QiuAi",
           "value": "123456",
           "width": 2,
           "format": "CODE128",

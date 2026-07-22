@@ -29,7 +29,7 @@ English| [中文](https://github.com/ikuaitu/vue-fabric-editor/blob/main/README.
     <img src="https://img.shields.io/github/license/ikuaitu/vue-fabric-editor?style=flat" alt="license" />
   </a>
   <a href="https://www.kuaitu.cc/" target="_blank">
-    <img src="https://img.shields.io/website?url=http%3A%2F%2Fpro.kuaitu.cc%2F" alt="快图设计网站" />
+    <img src="https://img.shields.io/website?url=http%3A%2F%2Fpro.kuaitu.cc%2F" alt="QiuAi website" />
   </a>
 </p>
 
