@@ -33,6 +33,10 @@ function createMainWindow() {
 
     return { action: 'deny' };
   });
+
+  mainWindow.webContents.on('will-prevent-unload', (event) => {
+    event.preventDefault();
+  });
 }
 
 app.whenReady().then(() => {

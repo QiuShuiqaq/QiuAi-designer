@@ -21,7 +21,7 @@
     "preview:staging": "pnpm build:staging && vite preview --mode=staging",
     "package:win": "vite build --mode=desktop && electron-builder --win nsis portable --x64",
     "prepare": "husky install",
-    "test": "pnpm -C packages/core test"
+    "test": "npm --prefix packages/core test"
   },
   "dependencies": {
     "@kuaitu/core": "workspace:^",

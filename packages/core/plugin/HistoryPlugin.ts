@@ -12,6 +12,10 @@ import Editor from '../Editor';
 type IEditor = Editor;
 type callback = () => void;
 
+function isElectronRuntime() {
+  return typeof navigator !== 'undefined' && /\bElectron\//i.test(navigator.userAgent || '');
+}
+
 class HistoryPlugin implements IPluginTempl {
   static pluginName = 'HistoryPlugin';
   static apis = ['undo', 'redo', 'historyUpdate', 'clearAndSaveState', 'saveState'];
@@ -23,6 +27,7 @@ class HistoryPlugin implements IPluginTempl {
   private maxLength = 100;
   private isProcessing = false;
   private isLoading = false;
+  private beforeUnloadHandler?: (e: BeforeUnloadEvent) => void;
 
   hotkeys: string[] = ['ctrl+z', 'ctrl+shift+z', '⌘+z', '⌘+shift+z'];
 
@@ -52,12 +57,18 @@ class HistoryPlugin implements IPluginTempl {
     });
 
     // 页面离开提示
-    window.addEventListener('beforeunload', (e) => {
+    if (isElectronRuntime()) {
+      return;
+    }
+
+    this.beforeUnloadHandler = (e) => {
       const { undoCount } = this.getState();
       if (undoCount > 0) {
+        e.preventDefault();
         (e || window.event).returnValue = '确认离开';
       }
-    });
+    };
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
   }
 
   // 获取当前状态
@@ -172,6 +183,13 @@ class HistoryPlugin implements IPluginTempl {
     this.stack = [currentState]; // 只保留当前状态作为第一条记录
     this.currentIndex = 1;
     this.historyUpdate();
+  }
+
+  destroy() {
+    if (this.beforeUnloadHandler) {
+      window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+      this.beforeUnloadHandler = undefined;
+    }
   }
 }
 

@@ -1,20 +1,25 @@
-import { beforeEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { initPlugin } from '../utils/setup.ts';
 import { DringPlugin } from '../../plugin/DringPlugin.ts';
 import { wait, mouseDown, drag } from '../utils/common.ts';
-import { describe } from 'node:test';
 
 describe('canvas:drag', async () => {
-  const { pluginInstance, cleanUp } = initPlugin(DringPlugin);
+  let pluginInstance: DringPlugin;
+  let cleanUp: () => void;
 
   beforeEach(() => {
-    return () => {
-      cleanUp();
-      (pluginInstance as DringPlugin).destroy();
-    };
+    const fixture = initPlugin(DringPlugin);
+    pluginInstance = fixture.pluginInstance as DringPlugin;
+    cleanUp = fixture.cleanUp;
   });
+
+  afterEach(() => {
+    pluginInstance.destroy();
+    cleanUp();
+  });
+
   test('dragMode is  true', async () => {
-    const instance = pluginInstance as DringPlugin;
+    const instance = pluginInstance;
     instance.dragMode = true;
     const testCanvas = instance.canvas as ExtCanvas;
     testCanvas.lastPosX = 0;
@@ -27,7 +32,7 @@ describe('canvas:drag', async () => {
   });
 
   test('dragMode is  false', async () => {
-    const instance = pluginInstance as DringPlugin;
+    const instance = pluginInstance;
     instance.dragMode = false;
     const testCanvas = instance.canvas as ExtCanvas;
     testCanvas.lastPosX = 0;
@@ -38,8 +43,8 @@ describe('canvas:drag', async () => {
   });
 
   test('canvas drag', async () => {
-    const instance = pluginInstance as DringPlugin;
-    instance.dragMode = false;
+    const instance = pluginInstance;
+    instance.dragMode = true;
     const testCanvas = pluginInstance.canvas as ExtCanvas;
     testCanvas.lastPosX = 0;
     testCanvas.lastPosY = 0;
