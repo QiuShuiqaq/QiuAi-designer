@@ -6,7 +6,7 @@
     <div v-if="embedded" class="platform-center-content__header">
       <div>
         <h3>我的</h3>
-        <p>这里统一处理激活、购买、钱包和订单。</p>
+        <p>这里统一处理激活、订阅、钱包和订单。</p>
       </div>
       <Button size="small" @click="refreshAll" :loading="isBootstrapping">刷新</Button>
     </div>
@@ -36,14 +36,14 @@
               <strong>{{ statusLabel }}</strong>
             </div>
             <Button size="small" @click="setActiveTab('license')">
-              {{ isActivated ? '查看授权' : '去激活' }}
+              {{ isActivated ? '查看订阅' : '去激活' }}
             </Button>
           </div>
-          <small>{{ activationStatus?.message || '请先绑定设备并激活授权。' }}</small>
+          <small>{{ activationStatus?.message || '请先开通订阅并激活设备。' }}</small>
         </div>
         <div class="platform-center-content__overview-grid">
           <div class="platform-center-content__overview-card">
-            <span>授权套餐</span>
+            <span>当前订阅</span>
             <strong>{{ activePackageName }}</strong>
             <small>{{ formattedExpireAt }}</small>
           </div>
@@ -54,9 +54,9 @@
           </div>
         </div>
         <div class="platform-center-content__quick-actions">
-          <Button size="small" @click="setActiveTab('license')">授权</Button>
+          <Button size="small" @click="setActiveTab('license')">激活</Button>
           <Button size="small" @click="setActiveTab('wallet')">钱包</Button>
-          <Button size="small" @click="setActiveTab('purchase')">购买</Button>
+          <Button size="small" @click="setActiveTab('purchase')">订阅</Button>
           <Button size="small" @click="refreshAll" :loading="isBootstrapping">刷新</Button>
         </div>
       </div>
@@ -78,14 +78,14 @@
           <small>{{ deviceName }}</small>
         </div>
         <div class="platform-center-content__summary-card">
-          <span>授权套餐</span>
+          <span>当前订阅</span>
           <strong>{{ activePackageName }}</strong>
           <small>{{ formattedExpireAt }}</small>
         </div>
       </div>
 
       <Tabs v-model="activeTab" :animated="false">
-        <TabPane label="授权" name="license">
+        <TabPane label="激活" name="license">
           <div class="platform-center-content__grid">
             <section class="platform-center-content__panel">
               <div class="platform-center-content__panel-head">
@@ -102,7 +102,7 @@
                 <strong>{{ activationForm.contact || '-' }}</strong>
               </div>
               <div class="platform-center-content__kv">
-                <span>授权套餐</span>
+                <span>当前订阅</span>
                 <strong>{{ activePackageName }}</strong>
               </div>
               <div class="platform-center-content__kv">
@@ -128,7 +128,7 @@
                 <FormItem label="客户名称">
                   <Input
                     v-model="activationForm.customerName"
-                    placeholder="输入购买时对应的客户名称"
+                    placeholder="输入订阅时对应的客户名称"
                   />
                 </FormItem>
                 <FormItem label="联系方式">
@@ -219,7 +219,7 @@
           </template>
         </TabPane>
 
-        <TabPane label="购买" name="purchase">
+        <TabPane label="订阅" name="purchase">
           <section class="platform-center-content__panel platform-center-content__panel--full">
             <div class="platform-center-content__panel-head">
               <h4>代理价格校验</h4>
@@ -246,54 +246,8 @@
           <div v-else class="platform-center-content__stack">
             <section class="platform-center-content__section">
               <div class="platform-center-content__section-head">
-                <h4>授权套餐</h4>
-              </div>
-              <div class="platform-center-content__package-grid">
-                <div
-                  v-for="pkg in softwarePackages"
-                  :key="pkg.id"
-                  class="platform-center-content__package-card"
-                >
-                  <div class="platform-center-content__package-head">
-                    <strong>{{ pkg.name }}</strong>
-                    <Tag>{{ pkg.code }}</Tag>
-                  </div>
-                  <div class="platform-center-content__package-price">
-                    <span class="platform-center-content__package-price-now">
-                      {{ formatPrice(resolveLicensePrice(pkg)) }}
-                    </span>
-                    <span
-                      v-if="hasLicenseDiscount(pkg)"
-                      class="platform-center-content__package-price-raw"
-                    >
-                      {{ formatPrice(pkg.officialPriceAmount || pkg.priceAmount) }}
-                    </span>
-                  </div>
-                  <p class="platform-center-content__package-desc">
-                    {{ pkg.description || '暂无描述' }}
-                  </p>
-                  <div class="platform-center-content__package-meta">
-                    <span>{{ pkg.durationDays || 0 }} 天</span>
-                    <span>{{ pkg.deviceLimit || 0 }} 设备</span>
-                    <span>{{ readCapability(pkg, 'taskConcurrencyLimit') }} 项目并发</span>
-                  </div>
-                  <div class="platform-center-content__panel-actions">
-                    <Button
-                      type="primary"
-                      :loading="isLicenseSubmitting"
-                      @click="submitLicenseOrder(pkg)"
-                    >
-                      购买授权
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="platform-center-content__section">
-              <div class="platform-center-content__section-head">
                 <h4>订阅套餐</h4>
-                <span class="platform-center-content__section-tip">购买后自动入账到钱包</span>
+                <span class="platform-center-content__section-tip">订阅包含软件授权和每月算力</span>
               </div>
               <div class="platform-center-content__package-grid">
                 <div
@@ -328,7 +282,6 @@
                   <div class="platform-center-content__panel-actions">
                     <Button
                       type="primary"
-                      :disabled="!isActivated"
                       :loading="isSubscriptionSubmitting"
                       @click="submitSubscriptionOrder(pkg)"
                     >
@@ -339,32 +292,11 @@
               </div>
             </section>
 
-            <section
-              v-if="currentLicenseOrder || currentSubscriptionOrder"
-              class="platform-center-content__section"
-            >
+            <section v-if="currentSubscriptionOrder" class="platform-center-content__section">
               <div class="platform-center-content__section-head">
                 <h4>订单状态</h4>
               </div>
               <div class="platform-center-content__order-grid">
-                <div v-if="currentLicenseOrder" class="platform-center-content__order-card">
-                  <div class="platform-center-content__order-head">
-                    <strong>授权订单</strong>
-                    <Tag>{{ currentLicenseOrder.status }}</Tag>
-                  </div>
-                  <div class="platform-center-content__order-meta">
-                    <span>订单号：{{ currentLicenseOrder.merchantOrderNo }}</span>
-                    <span>套餐：{{ currentLicenseOrder.packageName }}</span>
-                    <span>金额：{{ formatPrice(currentLicenseOrder.amountCny) }}</span>
-                  </div>
-                  <div class="platform-center-content__panel-actions">
-                    <Button @click="openPaymentForOrder(currentLicenseOrder)">打开支付</Button>
-                    <Button :loading="isLicenseRefreshing" @click="refreshLicenseOrder">
-                      刷新订单
-                    </Button>
-                  </div>
-                </div>
-
                 <div v-if="currentSubscriptionOrder" class="platform-center-content__order-card">
                   <div class="platform-center-content__order-head">
                     <strong>订阅订单</strong>
@@ -397,14 +329,11 @@ import { Message } from 'view-ui-plus';
 import { quotePlatformAgentPrices } from '@/platform/agent';
 import { PLATFORM_PRODUCT_KEY, isPlatformApiConfigured } from '@/platform/config';
 import {
-  createPlatformLicenseOrder,
   createPlatformSubscriptionOrder,
   createPlatformTopupOrder,
-  getPlatformLicenseOrder,
   getPlatformSubscriptionOrder,
   getPlatformTopupOrder,
 } from '@/platform/orders';
-import { listPlatformSoftwarePackages } from '@/platform/packages';
 import {
   activatePlatformLicense,
   clearPlatformSession,
@@ -425,10 +354,8 @@ import { getPlatformWalletSummary } from '@/platform/wallet';
 import type {
   PlatformActivationStatus,
   PlatformAgentQuote,
-  PlatformLicenseOrder,
   PlatformOrderPaymentPayload,
   PlatformProductMeta,
-  PlatformSoftwarePackage,
   PlatformSubscriptionOrder,
   PlatformSubscriptionPackage,
   PlatformTopupOrder,
@@ -450,8 +377,6 @@ const platformReady = isPlatformApiConfigured();
 const isBootstrapping = ref(false);
 const isActivating = ref(false);
 const isVerifyingAgent = ref(false);
-const isLicenseSubmitting = ref(false);
-const isLicenseRefreshing = ref(false);
 const isSubscriptionSubmitting = ref(false);
 const isSubscriptionRefreshing = ref(false);
 const isTopupSubmitting = ref(false);
@@ -462,10 +387,8 @@ const packageError = ref('');
 const productMeta = ref<PlatformProductMeta | null>(null);
 const activationStatus = ref<PlatformActivationStatus | null>(null);
 const walletSummary = ref<PlatformWalletSummary | null>(null);
-const softwarePackages = ref<PlatformSoftwarePackage[]>([]);
 const subscriptionPackages = ref<PlatformSubscriptionPackage[]>([]);
 const agentQuote = ref<PlatformAgentQuote | null>(null);
-const currentLicenseOrder = ref<PlatformLicenseOrder | null>(null);
 const currentSubscriptionOrder = ref<PlatformSubscriptionOrder | null>(null);
 const currentTopupOrder = ref<PlatformTopupOrder | null>(null);
 const activeTab = ref<'license' | 'wallet' | 'purchase'>('license');
@@ -496,7 +419,9 @@ const statusLabel = computed(() => {
   if (status === 'not_logged_in') return '未登录';
   return status || '未配置';
 });
-const activePackageName = computed(() => activationStatus.value?.activePackage?.name || '-');
+const activePackageName = computed(
+  () => activationStatus.value?.activePackage?.name || (isActivated.value ? '订阅授权' : '-')
+);
 const formattedExpireAt = computed(() => {
   const value = String(activationStatus.value?.expiresAt || '').trim();
   if (!value) return '-';
@@ -522,7 +447,7 @@ const agentQuoteTip = computed(() => {
 function emitTriggerState() {
   emit('status-change', {
     title: isActivated.value ? activationStatus.value?.customerName || '已激活' : '平台中心',
-    subtitle: isActivated.value ? '授权正常' : '未激活',
+    subtitle: isActivated.value ? '订阅正常' : '未激活',
   });
 }
 
@@ -543,28 +468,10 @@ function formatPrice(value?: number) {
   return `CNY ${formatBalance(value)}`;
 }
 
-function readCapability(pkg: PlatformSoftwarePackage, key: string) {
-  const capability = (pkg.capabilityConfig || {}) as Record<string, unknown>;
-  const rawValue = capability[key];
-  if (rawValue === undefined || rawValue === null || rawValue === '') {
-    return '-';
-  }
-  return String(rawValue);
-}
-
-function findAgentQuoteItem(type: 'license' | 'subscription', code: string) {
+function findAgentQuoteItem(type: 'subscription', code: string) {
   return agentQuote.value?.items?.find(
     (item) => item.saleItemType === type && item.saleItemCode === code
   );
-}
-
-function resolveLicensePrice(pkg: PlatformSoftwarePackage) {
-  const quoteItem = findAgentQuoteItem('license', pkg.code);
-  if (quoteItem && agentQuote.value?.valid) {
-    return Number(quoteItem.agentSalePrice || pkg.officialPriceAmount || pkg.priceAmount || 0);
-  }
-
-  return Number(pkg.officialPriceAmount || pkg.priceAmount || 0);
 }
 
 function resolveSubscriptionPrice(pkg: PlatformSubscriptionPackage) {
@@ -574,10 +481,6 @@ function resolveSubscriptionPrice(pkg: PlatformSubscriptionPackage) {
   }
 
   return Number(pkg.priceAmount || 0);
-}
-
-function hasLicenseDiscount(pkg: PlatformSoftwarePackage) {
-  return resolveLicensePrice(pkg) < Number(pkg.officialPriceAmount || pkg.priceAmount || 0);
 }
 
 function hasSubscriptionDiscount(pkg: PlatformSubscriptionPackage) {
@@ -676,10 +579,6 @@ async function restoreActivationIfNeeded() {
   }
 }
 
-async function loadSoftwarePackages() {
-  softwarePackages.value = await listPlatformSoftwarePackages();
-}
-
 async function loadSubscriptionPackages() {
   subscriptionPackages.value = await listPlatformSubscriptionPackages();
 }
@@ -705,7 +604,7 @@ async function refreshAll() {
   try {
     await Promise.all([loadProductMeta(), loadActivationStatus()]);
     await restoreActivationIfNeeded();
-    await Promise.all([loadSoftwarePackages(), loadSubscriptionPackages(), loadWalletSummary()]);
+    await Promise.all([loadSubscriptionPackages(), loadWalletSummary()]);
     persistProfile();
   } catch (error) {
     const message = error instanceof Error ? error.message : '平台初始化失败';
@@ -778,69 +677,12 @@ function clearSession() {
   Message.success('平台会话已清除');
 }
 
-async function submitLicenseOrder(pkg: PlatformSoftwarePackage) {
+async function submitSubscriptionOrder(pkg: PlatformSubscriptionPackage) {
   const customerName = activationForm.customerName.trim();
   const contact = activationForm.contact.trim();
 
   if (!customerName || !contact) {
-    Message.warning('购买授权前请先填写客户名称和联系方式');
-    return;
-  }
-
-  isLicenseSubmitting.value = true;
-  try {
-    currentLicenseOrder.value = await createPlatformLicenseOrder({
-      packageCode: pkg.code,
-      customerName,
-      contact,
-      agentInviteCode: activationForm.agentInviteCode.trim(),
-    });
-    persistProfile();
-    await openPaymentForOrder(currentLicenseOrder.value);
-  } catch (error) {
-    Message.error(error instanceof Error ? error.message : '创建授权订单失败');
-  } finally {
-    isLicenseSubmitting.value = false;
-  }
-}
-
-async function refreshLicenseOrder() {
-  if (!currentLicenseOrder.value?.id) {
-    return;
-  }
-
-  isLicenseRefreshing.value = true;
-  try {
-    currentLicenseOrder.value = await getPlatformLicenseOrder({
-      id: currentLicenseOrder.value.id,
-      orderAccessToken: currentLicenseOrder.value.orderAccessToken,
-    });
-
-    if (currentLicenseOrder.value.status === 'paid') {
-      Message.success('授权订单已支付');
-      if (
-        !isActivated.value &&
-        activationForm.customerName.trim() &&
-        activationForm.contact.trim()
-      ) {
-        await submitActivation();
-      } else {
-        await refreshAll();
-      }
-      return;
-    }
-
-    Message.info('授权订单状态已刷新');
-  } catch (error) {
-    Message.error(error instanceof Error ? error.message : '刷新授权订单失败');
-  } finally {
-    isLicenseRefreshing.value = false;
-  }
-}
-
-async function submitSubscriptionOrder(pkg: PlatformSubscriptionPackage) {
-  if (!isActivated.value) {
-    Message.warning('请先激活设备，再购买订阅');
+    Message.warning('开通订阅前请先填写客户名称和联系方式');
     return;
   }
 
@@ -848,7 +690,11 @@ async function submitSubscriptionOrder(pkg: PlatformSubscriptionPackage) {
   try {
     currentSubscriptionOrder.value = await createPlatformSubscriptionOrder({
       subscriptionCode: pkg.code,
+      customerName,
+      contact,
+      agentInviteCode: activationForm.agentInviteCode.trim(),
     });
+    persistProfile();
     await openPaymentForOrder(currentSubscriptionOrder.value);
   } catch (error) {
     Message.error(error instanceof Error ? error.message : '创建订阅订单失败');
@@ -869,8 +715,19 @@ async function refreshSubscriptionOrder() {
     });
 
     if (currentSubscriptionOrder.value.status === 'paid') {
-      await refreshAll();
-      Message.success('订阅已入账');
+      if (
+        !isActivated.value &&
+        activationForm.customerName.trim() &&
+        activationForm.contact.trim()
+      ) {
+        await submitActivation();
+        if (!isActivated.value) {
+          return;
+        }
+      } else {
+        await refreshAll();
+      }
+      Message.success('订阅已开通，授权已同步');
       return;
     }
 
