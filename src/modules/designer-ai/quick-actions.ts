@@ -1,5 +1,21 @@
 import type { DesignerAiActionCategory } from '@/platform/types';
 
+export type DesignerAiReferenceSnapshot = {
+  objectId: string;
+  objectType: string;
+  label: string;
+  sourceUrl?: string;
+  sourceDataUrl?: string;
+  previewDataUrl?: string;
+  frame: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    aspectRatio: string;
+  };
+};
+
 export type DesignerAiQuickActionDetail = {
   actionKey?: string;
   label?: string;
@@ -7,6 +23,7 @@ export type DesignerAiQuickActionDetail = {
   category?: DesignerAiActionCategory;
   objectId?: string;
   objectType?: string;
+  referenceSnapshot?: DesignerAiReferenceSnapshot;
 };
 
 export const DESIGNER_AI_QUICK_ACTION_REQUEST_EVENT = 'qiuai-designer-ai-quick-action-request';

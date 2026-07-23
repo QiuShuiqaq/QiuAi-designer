@@ -2,8 +2,8 @@
   <section class="designer-ai-content" :class="{ 'designer-ai-content--embedded': embedded }">
     <div v-if="embedded" class="designer-ai-content__header">
       <div class="designer-ai-content__header-main">
-        <h3>智能体设计师</h3>
-        <p>您好，我是您的专属智能体设计师</p>
+        <h3>{{ panelTitle }}</h3>
+        <p>{{ panelSubtitle }}</p>
       </div>
     </div>
 
@@ -22,7 +22,133 @@
         <template #desc>{{ errorMessage }}</template>
       </Alert>
 
-      <div class="designer-ai-content__chat">
+      <div v-if="isToolMode" class="designer-ai-content__tool">
+        <section class="designer-ai-content__tool-card">
+          <div class="designer-ai-content__tool-card-head">
+            <strong>参考图</strong>
+            <Button
+              v-if="toolReferenceSelection"
+              size="small"
+              type="text"
+              @click="clearToolReference"
+            >
+              清除
+            </Button>
+          </div>
+
+          <div v-if="toolReferenceSelection" class="designer-ai-content__reference">
+            <img
+              v-if="toolReferencePreviewSrc"
+              :src="toolReferencePreviewSrc"
+              alt="AI 生图参考图"
+            />
+            <div class="designer-ai-content__reference-meta">
+              <strong>{{ toolReferenceSelection.label }}</strong>
+              <span>{{ toolReferenceMetaText }}</span>
+            </div>
+          </div>
+
+          <div v-else class="designer-ai-content__reference-empty">
+            <strong>未设置参考图</strong>
+            <span>在画布图片上右键，选择“发送到AI生图”，可固定当前图片作为参考。</span>
+          </div>
+        </section>
+
+        <section class="designer-ai-content__tool-card">
+          <div class="designer-ai-content__tool-card-head">
+            <strong>参数选择</strong>
+            <Tag color="primary">{{ canvasImageSize }}</Tag>
+          </div>
+
+          <ButtonGroup class="designer-ai-content__tool-modes" size="small">
+            <Button
+              v-for="option in imageToolModeOptions"
+              :key="option.value"
+              :type="imageToolMode === option.value ? 'primary' : 'default'"
+              :disabled="option.value === 'edit' && !toolReferenceSelection"
+              @click="imageToolMode = option.value"
+            >
+              {{ option.label }}
+            </Button>
+          </ButtonGroup>
+
+          <p>{{ imageToolModeHint }}</p>
+        </section>
+
+        <section class="designer-ai-content__tool-card">
+          <div class="designer-ai-content__tool-card-head">
+            <strong>提示词输入</strong>
+            <Tag v-if="designerAiCostPreview" color="primary">
+              {{ formatDesignerAiCostBadge(designerAiCostPreview.points) }}
+            </Tag>
+          </div>
+
+          <Input
+            v-model="prompt"
+            type="textarea"
+            :autosize="{ minRows: 6, maxRows: 10 }"
+            placeholder="直接描述要生成或修改的画面，例如：把蛋糕替换成蓝莓蛋糕，保留干净边缘。"
+          />
+
+          <div class="designer-ai-content__tool-actions">
+            <small>{{ designerAiBillingHint }}</small>
+            <div>
+              <Button v-if="canCancelJob" :loading="isCancelling" @click="cancelJob">取消</Button>
+              <Button
+                type="primary"
+                :disabled="!canSubmit"
+                :loading="isSubmitting || isPolling"
+                @click="submitJob"
+              >
+                {{ designerAiSubmitLabel }}
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          v-if="currentJob || generatedImageResults.length"
+          class="designer-ai-content__tool-card"
+        >
+          <div class="designer-ai-content__tool-card-head">
+            <strong>结果</strong>
+            <Tag v-if="currentJob" :color="jobStatusColor">{{ currentJob.status }}</Tag>
+          </div>
+
+          <div v-if="currentJob" class="designer-ai-content__job-progress">
+            <div class="designer-ai-content__job-progress-head">
+              <div>
+                <strong>{{ jobProgressStageLabel }}</strong>
+              </div>
+              <span>{{ jobProgressPercent }}%</span>
+            </div>
+            <Progress
+              :percent="jobProgressPercent"
+              :stroke-width="6"
+              :status="jobProgressBarStatus"
+              hide-info
+            />
+            <div class="designer-ai-content__job-progress-meta">
+              <span>已用：{{ jobElapsedText }}</span>
+              <span>预计：{{ jobEstimateText }}</span>
+            </div>
+            <p>{{ jobProgressDescription }}</p>
+          </div>
+
+          <div v-if="generatedImageResults.length" class="designer-ai-content__result-grid">
+            <div
+              v-for="item in generatedImageResults"
+              :key="item.id"
+              class="designer-ai-content__result-card"
+            >
+              <img :src="item.src" alt="AI 生成结果" />
+              <span>{{ item.label }}</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div v-else class="designer-ai-content__chat">
         <div ref="messagesRef" class="designer-ai-content__messages">
           <div
             v-for="message in conversationMessages"
@@ -116,39 +242,15 @@
         </div>
 
         <div class="designer-ai-content__composer">
-          <div class="designer-ai-content__mode-row">
-            <ButtonGroup size="small" class="designer-ai-content__mode-tabs">
-              <Button
-                v-for="option in workModeOptions"
-                :key="option.value"
-                :type="workMode === option.value ? 'primary' : 'default'"
-                :disabled="option.disabled"
-                @click="setWorkMode(option)"
-              >
-                {{ option.label }}
-              </Button>
-            </ButtonGroup>
-            <span>{{ workModeHint }}</span>
-          </div>
-
-          <div class="designer-ai-content__billing-row">
-            <Tag v-if="designerAiCostPreview" color="primary">
-              {{ designerAiCostPreview.label }} ·
-              {{ formatDesignerAiCostBadge(designerAiCostPreview.points) }}
-            </Tag>
-            <Tag v-else color="success">聊天不扣点</Tag>
-            <span>{{ designerAiBillingHint }}</span>
-          </div>
-
           <Input
             v-model="prompt"
             type="textarea"
-            :autosize="{ minRows: 4, maxRows: 8 }"
-            placeholder="像聊天一样描述你要生成或修改的内容"
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            placeholder="向智能体设计师提问，生图请使用左侧 AI生图 工具。"
           />
 
           <div class="designer-ai-content__composer-foot">
-            <small>{{ isActivated ? '已激活，可直接发送。' : '当前未激活。' }}</small>
+            <small>{{ isActivated ? '聊天咨询不直接派发生图任务。' : '当前未激活。' }}</small>
             <div class="designer-ai-content__composer-actions">
               <Button
                 :disabled="isSubmitting || isPolling || isCancelling"
@@ -191,12 +293,16 @@ import {
 } from '@/modules/designer-ai/billing-profile';
 import { applyDesignerAiPatch } from '@/modules/designer-ai/patch';
 import { onDesignerAiPanelAction } from '@/modules/designer-ai/quick-actions';
-import type { DesignerAiQuickActionDetail } from '@/modules/designer-ai/quick-actions';
+import type {
+  DesignerAiQuickActionDetail,
+  DesignerAiReferenceSnapshot,
+} from '@/modules/designer-ai/quick-actions';
 import { saveImageSourceAsLocalAsset } from '@/modules/local-workspace/assets';
 import { saveCurrentDesign } from '@/modules/local-workspace/workspace';
 import { isPlatformApiConfigured } from '@/platform/config';
 import {
   cancelDesignerAiJob,
+  createDesignerAiJob,
   getDesignerAiCapabilities,
   getDesignerAiJob,
   parseDesignerAiTemplateSlots,
@@ -212,21 +318,29 @@ import {
 import type {
   DesignerAiCapabilities,
   DesignerAiJob,
+  DesignerAiJobCreatePayload,
   DesignerAiPatch,
   DesignerAiMode,
   DesignerAiTargetRole,
-  DesignerAiTemplateSlot,
   DesignerAiTemplateSlotsPayload,
   DesignerAssistantTurnResponse,
   PlatformActivationStatus,
 } from '@/platform/types';
 
-defineProps({
+const props = defineProps({
   embedded: {
     type: Boolean,
     default: false,
   },
+  panelMode: {
+    type: String,
+    default: 'chat',
+  },
 });
+
+const embedded = computed(() => props.embedded);
+const isToolMode = computed(() => props.panelMode === 'tool');
+const isChatMode = computed(() => !isToolMode.value);
 
 type DirectImageSelection = {
   id: string;
@@ -259,10 +373,11 @@ type DesignerAiConversationMessage = {
 };
 
 type DesignerAiWorkMode = 'auto' | 'overall' | 'layer';
-type DesignerAiWorkModeOption = {
-  value: DesignerAiWorkMode;
+
+type DesignerAiImageToolMode = 'edit' | 'background' | 'element' | 'artText';
+type DesignerAiImageToolModeOption = {
+  value: DesignerAiImageToolMode;
   label: string;
-  disabled?: boolean;
 };
 
 type CanvasSizeReader = {
@@ -290,11 +405,13 @@ const lastAssistantTurn = ref<DesignerAssistantTurnResponse | null>(null);
 const activationStatus = ref<PlatformActivationStatus | null>(null);
 const directImageSelection = ref<DirectImageSelection | null>(null);
 const activeCanvasSelection = ref<ActiveCanvasSelection | null>(null);
+const lockedReferenceSelection = ref(false);
 const conversationMessages = ref<DesignerAiConversationMessage[]>([]);
 const messagesRef = ref<HTMLElement | null>(null);
 const pendingQuickAction = ref<DesignerAiQuickActionDetail | null>(null);
 const progressClock = ref(Date.now());
 const workMode = ref<DesignerAiWorkMode>('auto');
+const imageToolMode = ref<DesignerAiImageToolMode>('background');
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let stopPanelActionListener: (() => void) | null = null;
@@ -315,8 +432,22 @@ const templateId = computed(() => {
 
 const slots = computed(() => parsedSlots.value?.slots || []);
 const enabledSlots = computed(() => slots.value.filter((slot) => slot.aiEnabled));
-const maxTargetsPerJob = computed(() => Math.max(1, capabilities.value?.maxTargetsPerJob || 4));
 const hasDirectImageSelection = computed(() => Boolean(directImageSelection.value));
+const toolReferenceSelection = computed(() =>
+  lockedReferenceSelection.value ? directImageSelection.value : null
+);
+const toolReferencePreviewSrc = computed(() => {
+  const reference = toolReferenceSelection.value;
+  return reference?.sourceDataUrl || reference?.sourceUrl || '';
+});
+const toolReferenceMetaText = computed(() => {
+  const reference = toolReferenceSelection.value;
+  if (!reference) {
+    return '';
+  }
+
+  return `${reference.displayWidth} × ${reference.displayHeight} · ${reference.aspectRatio}`;
+});
 const isDirectImageMode = computed(() => {
   if (!hasDirectImageSelection.value) {
     return false;
@@ -324,27 +455,32 @@ const isDirectImageMode = computed(() => {
 
   return shouldUseLayerMode(prompt.value);
 });
-const workModeOptions: DesignerAiWorkModeOption[] = [
-  { value: 'auto', label: '智能聊天' },
-  { value: 'layer', label: '图层设计' },
+const imageToolModeOptions: DesignerAiImageToolModeOption[] = [
+  { value: 'edit', label: '参考图编辑' },
+  { value: 'background', label: '生成背景' },
+  { value: 'element', label: '生成元素' },
+  { value: 'artText', label: '生成艺术字' },
 ];
-const workModeHint = computed(() => {
-  const selection = activeCanvasSelection.value;
-  const layerLabel = selection?.label ? `「${selection.label}」` : '';
-
-  if (workMode.value === 'overall') {
-    return '总体设计已禁用，当前请使用图层设计或智能聊天。';
+const panelTitle = computed(() => (isToolMode.value ? 'AI生图' : '智能体设计师'));
+const panelSubtitle = computed(() =>
+  isToolMode.value ? '右键发送参考图后再生成，避免选中状态漂移。' : '您好，我是您的专属智能体设计师'
+);
+const imageToolModeHint = computed(() => {
+  if (imageToolMode.value === 'edit') {
+    return toolReferenceSelection.value
+      ? '使用右键固定的参考图进行定向改图，结果会自动应用到原图层。'
+      : '请先在画布图片上右键，选择“发送到AI生图”。';
   }
 
-  if (workMode.value === 'layer') {
-    return selection
-      ? `图层设计：当前目标 ${layerLabel}，只会作用于它。`
-      : '图层设计：请先在画布选中要修改的图层，或右键打开快捷操作。';
+  if (imageToolMode.value === 'background') {
+    return '生成一张可用于当前画布的背景图。';
   }
 
-  return selection
-    ? `智能聊天：局部修改会优先作用于 ${layerLabel}。`
-    : '智能聊天：可直接对话；要精准改图层请先选中对象。';
+  if (imageToolMode.value === 'artText') {
+    return '生成可继续排版的艺术字或标题字图片素材。';
+  }
+
+  return '生成贴纸、装饰、产品氛围元素等独立素材。';
 });
 const canvasImagePointTier = computed(() => {
   const editorCanvas = (canvasEditor as unknown as { canvas?: CanvasSizeReader }).canvas;
@@ -370,6 +506,7 @@ const designerAiCostPreview = computed(() => {
   }
 
   if (
+    isToolMode.value ||
     pendingQuickAction.value?.category === 'material' ||
     isDirectImageMode.value ||
     shouldUseLayerMode(promptValue)
@@ -398,6 +535,12 @@ const designerAiCostPreview = computed(() => {
   return null;
 });
 const designerAiSubmitLabel = computed(() => {
+  if (isToolMode.value) {
+    return designerAiCostPreview.value
+      ? `生成 · ${formatDesignerAiCostBadge(designerAiCostPreview.value.points)}`
+      : '生成';
+  }
+
   if (!designerAiCostPreview.value) {
     return '发送';
   }
@@ -406,6 +549,22 @@ const designerAiSubmitLabel = computed(() => {
 });
 const designerAiBillingHint = computed(() => {
   const promptValue = prompt.value.trim();
+  if (isToolMode.value) {
+    if (!promptValue) {
+      return '生图会消耗 AI 点，具体以服务端结算为准。';
+    }
+
+    if (imageToolMode.value === 'edit' && !toolReferenceSelection.value) {
+      return '参考图编辑需要先通过右键发送参考图。';
+    }
+
+    return designerAiCostPreview.value?.points
+      ? `预计消耗 ${formatDesignerAiPoints(
+          designerAiCostPreview.value.points
+        )}，最终以服务端结算为准。`
+      : '具体消耗以服务端结算为准。';
+  }
+
   if (!promptValue) {
     return '普通聊天不扣 AI 点；设计类生成会显示预计消耗。';
   }
@@ -443,9 +602,39 @@ const canSubmit = computed(() => {
     platformReady &&
       isActivated.value &&
       prompt.value.trim() &&
+      (!isToolMode.value || imageToolMode.value !== 'edit' || toolReferenceSelection.value) &&
       !isSubmitting.value &&
       !isPolling.value
   );
+});
+
+const generatedImageResults = computed(() => {
+  const actions = currentJob.value?.result?.actions || [];
+  return actions
+    .map((action, index) => {
+      if (action.type === 'replace-image-src') {
+        return {
+          id: `${action.targetId}-${index}`,
+          label: '替换结果',
+          src: action.src,
+        };
+      }
+
+      if (action.type === 'add-object') {
+        const object = action.object || {};
+        const src = String(object.src || '').trim();
+        if (String(object.type || '') === 'image' && src) {
+          return {
+            id: `${String(object.id || 'image')}-${index}`,
+            label: String(object.name || '新增图片'),
+            src,
+          };
+        }
+      }
+
+      return null;
+    })
+    .filter((item): item is { id: string; label: string; src: string } => Boolean(item));
 });
 
 const canCancelJob = computed(() => {
@@ -654,14 +843,6 @@ function formatToolCall(toolCall: DesignerAssistantTurnResponse['toolCalls'][num
   return `图层规划${targetRoles ? ` · ${targetRoles}` : ''}`;
 }
 
-function setWorkMode(option: DesignerAiWorkModeOption) {
-  if (option.disabled) {
-    return;
-  }
-
-  workMode.value = option.value;
-}
-
 function clearPolling() {
   if (pollingTimer) {
     clearTimeout(pollingTimer);
@@ -710,18 +891,101 @@ function scrollMessagesToBottom() {
   element.scrollTop = element.scrollHeight;
 }
 
+function createSelectionFromReferenceSnapshot(
+  referenceSnapshot: DesignerAiReferenceSnapshot
+): DirectImageSelection | null {
+  if (referenceSnapshot.objectType !== 'image' || !referenceSnapshot.objectId) {
+    return null;
+  }
+
+  const frame = referenceSnapshot.frame || {
+    width: 1,
+    height: 1,
+    aspectRatio: '1:1',
+  };
+  const displayWidth = Math.max(1, Math.round(Number(frame.width) || 1));
+  const displayHeight = Math.max(1, Math.round(Number(frame.height) || 1));
+
+  return {
+    id: referenceSnapshot.objectId,
+    label: String(referenceSnapshot.label || '图片').trim() || '图片',
+    role: 'product-image',
+    mode: 'image-edit',
+    width: displayWidth,
+    height: displayHeight,
+    displayWidth,
+    displayHeight,
+    aspectRatio:
+      String(frame.aspectRatio || '').trim() ||
+      resolveStandardImageAspectRatio(displayWidth, displayHeight),
+    sourceUrl: String(referenceSnapshot.sourceUrl || '').trim(),
+    sourceDataUrl: String(
+      referenceSnapshot.sourceDataUrl || referenceSnapshot.previewDataUrl || ''
+    ).trim(),
+  };
+}
+
+function setToolModeFromAction(actionKey = '') {
+  if (actionKey === 'generate-background') {
+    imageToolMode.value = 'background';
+    return;
+  }
+
+  if (actionKey === 'generate-art-text') {
+    imageToolMode.value = 'artText';
+    return;
+  }
+
+  if (actionKey === 'generate-element') {
+    imageToolMode.value = 'element';
+    return;
+  }
+
+  if (toolReferenceSelection.value) {
+    imageToolMode.value = 'edit';
+  }
+}
+
 function handleDesignerAiPanelAction(detail: DesignerAiQuickActionDetail) {
   const nextPrompt = String(detail.prompt || '').trim();
+  const referenceSelection = detail.referenceSnapshot
+    ? createSelectionFromReferenceSnapshot(detail.referenceSnapshot)
+    : null;
+
+  if (referenceSelection) {
+    directImageSelection.value = referenceSelection;
+    activeCanvasSelection.value = {
+      objectId: referenceSelection.id,
+      objectType: 'image',
+      label: referenceSelection.label,
+    };
+    lockedReferenceSelection.value = true;
+  }
+
+  setToolModeFromAction(detail.actionKey || '');
   pendingQuickAction.value = detail;
-  if (nextPrompt) {
+  if (nextPrompt && detail.actionKey !== 'send-to-ai-image') {
     prompt.value = nextPrompt;
   }
 
-  appendConversationEntry(
-    'assistant',
-    '快捷操作',
-    detail.label ? `已填入：${detail.label}。你可以继续补充后直接发送。` : '已填入快捷操作。'
-  );
+  if (isChatMode.value) {
+    appendConversationEntry(
+      'assistant',
+      '快捷操作',
+      detail.label ? `已填入：${detail.label}。你可以继续补充后直接发送。` : '已填入快捷操作。'
+    );
+  } else if (detail.label) {
+    Message.info(`${detail.label} 已进入 AI生图`);
+  }
+}
+
+function clearToolReference() {
+  lockedReferenceSelection.value = false;
+  directImageSelection.value = null;
+  activeCanvasSelection.value = null;
+  if (imageToolMode.value === 'edit') {
+    imageToolMode.value = 'background';
+  }
 }
 
 function normalizeCanvasJson() {
@@ -760,66 +1024,6 @@ function getCanvasSnapshot() {
       },
       objects: Array.isArray(parsed.objects) ? parsed.objects : [],
     },
-  };
-}
-
-function getKeywordMap() {
-  return {
-    background: ['背景', '底图', '主图', 'scene', 'background', 'bg'],
-    title: ['标题', '主标题', 'headline', 'title', 'slogan'],
-    subtitle: ['副标题', 'subheading', 'subtitle', '卖点'],
-    'body-text': ['文案', '描述', '说明', 'body', 'copy'],
-    cta: ['按钮', '行动', '下单', '立即', '咨询', 'cta', 'button'],
-    price: ['价格', '售价', '优惠', 'price'],
-    'product-image': [
-      '商品图',
-      '产品图',
-      '主体',
-      '模特',
-      '人物',
-      '人像',
-      'model',
-      'person',
-      'product',
-    ],
-    logo: ['logo', '品牌', '标志'],
-    decoration: ['装饰', '图标', 'icon', '点缀', '线条', '元素', '贴纸', '艺术字', '字效'],
-  } as const;
-}
-
-function buildSuggestedTargets(nextSlots: DesignerAiTemplateSlot[], promptValue: string) {
-  const normalizedPrompt = promptValue.trim().toLowerCase();
-  const keywordMap = getKeywordMap();
-  const matchedRoles = new Set<string>();
-
-  Object.entries(keywordMap).forEach(([role, keywords]) => {
-    if (keywords.some((keyword) => normalizedPrompt.includes(keyword.toLowerCase()))) {
-      matchedRoles.add(role);
-    }
-  });
-
-  const priorityRoles = ['background', 'title', 'subtitle', 'body-text', 'cta', 'price'];
-  const secondaryPriorityRoles = ['product-image', 'logo', 'decoration'];
-  const rankedSlots = [...nextSlots].sort((a, b) => {
-    const leftIndex = priorityRoles.indexOf(a.role);
-    const rightIndex = priorityRoles.indexOf(b.role);
-    const leftSecondaryIndex = secondaryPriorityRoles.indexOf(a.role);
-    const rightSecondaryIndex = secondaryPriorityRoles.indexOf(b.role);
-    const normalizedLeft = leftIndex >= 0 ? leftIndex : 100 + Math.max(leftSecondaryIndex, 0);
-    const normalizedRight = rightIndex >= 0 ? rightIndex : 100 + Math.max(rightSecondaryIndex, 0);
-    return normalizedLeft - normalizedRight;
-  });
-
-  const explicitMatches = rankedSlots.filter((slot) => matchedRoles.has(slot.role));
-  const fallbackMatches = rankedSlots.filter((slot) => !matchedRoles.has(slot.role));
-  const merged = (explicitMatches.length ? explicitMatches : fallbackMatches).slice(
-    0,
-    maxTargetsPerJob.value
-  );
-
-  return {
-    ids: merged.map((slot) => slot.id),
-    slots: merged,
   };
 }
 
@@ -909,6 +1113,22 @@ function formatErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function isTransientPollingError(error: unknown) {
+  const statusCode =
+    error && typeof error === 'object'
+      ? Number((error as { statusCode?: number }).statusCode || 0)
+      : 0;
+  const message = String(error instanceof Error ? error.message : error || '');
+
+  return (
+    statusCode === 0 ||
+    statusCode === 408 ||
+    statusCode === 429 ||
+    statusCode >= 500 ||
+    /timeout|network|aborted|ECONNABORTED|ERR_NETWORK/i.test(message)
+  );
 }
 
 function isDataImageUrl(value: string) {
@@ -1099,6 +1319,10 @@ function getActiveCanvasSelection() {
 }
 
 function syncDirectImageSelection() {
+  if (lockedReferenceSelection.value) {
+    return;
+  }
+
   activeCanvasSelection.value = getActiveCanvasSelection();
   directImageSelection.value = getActiveImageObject();
 }
@@ -1192,72 +1416,163 @@ function shouldBlockOverallDesign(promptValue: string) {
   return workMode.value === 'overall' || isOverallDesignIntent(normalizedPrompt);
 }
 
-function inferSelectedLayerRole(selection: ActiveCanvasSelection): DesignerAiTargetRole {
-  const type = selection.objectType.toLowerCase();
-  if (type.includes('text')) {
-    return 'body-text';
+function getToolTargetRole() {
+  if (imageToolMode.value === 'artText') {
+    return 'decoration' as const;
   }
 
-  if (type === 'image') {
-    return 'product-image';
+  if (imageToolMode.value === 'element') {
+    return 'decoration' as const;
   }
 
-  return 'decoration';
+  return 'background' as const;
 }
 
-function inferSelectedLayerMode(selection: ActiveCanvasSelection): DesignerAiMode {
-  const type = selection.objectType.toLowerCase();
-  if (type.includes('text')) {
-    return 'text-generate';
-  }
-
-  if (type === 'image') {
+function getToolActionKey() {
+  if (imageToolMode.value === 'edit') {
     return 'image-edit';
   }
 
-  return 'image-edit';
+  if (imageToolMode.value === 'artText') {
+    return 'generate-art-text';
+  }
+
+  if (imageToolMode.value === 'element') {
+    return 'generate-element';
+  }
+
+  return 'generate-background';
 }
 
-function buildSelectedLayerTarget(selection: ActiveCanvasSelection) {
-  const matchedSlot = enabledSlots.value.find((slot) => slot.id === selection.objectId);
-  const role = matchedSlot?.role || inferSelectedLayerRole(selection);
-  const mode = matchedSlot?.aiMode || inferSelectedLayerMode(selection);
+function buildToolTarget() {
+  const role = getToolTargetRole();
+
+  if (imageToolMode.value === 'edit') {
+    if (!toolReferenceSelection.value) {
+      throw new Error('请先通过右键发送参考图到 AI 生图。');
+    }
+
+    return {
+      slotId: toolReferenceSelection.value.id,
+      role: toolReferenceSelection.value.role,
+      mode: 'image-edit' as const,
+      targetSource: 'selected-layer' as const,
+    };
+  }
+
+  const matchedSlot = enabledSlots.value.find(
+    (slot) => slot.role === role && slot.aiMode === 'image-generate'
+  );
+  if (matchedSlot) {
+    return {
+      slotId: matchedSlot.id,
+      role: matchedSlot.role,
+      mode: matchedSlot.aiMode,
+      targetSource: 'ai-slot' as const,
+    };
+  }
 
   return {
-    slotId: selection.objectId,
+    slotId: `ai-generated-${role}-${uuidv4()}`,
     role,
-    mode,
-    targetSource: 'selected-layer' as const,
+    mode: 'image-generate' as const,
+    targetSource: 'ai-slot' as const,
   };
 }
 
-function buildAssistantTargets(promptValue: string) {
-  if (pendingQuickAction.value?.category === 'material') {
-    return [];
+function buildToolJobPayload(input: {
+  message: string;
+  width: number;
+  height: number;
+  conversationHistory?: DesignerAiConversationMessage[];
+  snapshot: {
+    meta?: Record<string, unknown>;
+    objects?: Array<Record<string, unknown>>;
+  };
+}): DesignerAiJobCreatePayload {
+  const selectedImage = toolReferenceSelection.value;
+  let templateSnapshot = input.snapshot;
+
+  if (imageToolMode.value === 'edit') {
+    if (!selectedImage) {
+      throw new Error('请先通过右键发送参考图到 AI 生图。');
+    }
+
+    if (!selectedImage.sourceUrl && !selectedImage.sourceDataUrl) {
+      throw new Error(
+        '当前图片图层缺少可用于 AI 编辑的图片来源，请重新选择图片或先生成一张远程图片后再编辑。'
+      );
+    }
+
+    if (isLocalOnlyImageSource(selectedImage.sourceUrl) && !selectedImage.sourceDataUrl) {
+      throw new Error(
+        '当前图片是浏览器临时地址，服务端 AI 无法读取。请先使用平台生成图片，或换成可访问的远程图片后再编辑。'
+      );
+    }
+
+    const snapshotObjects = Array.isArray(input.snapshot.objects) ? input.snapshot.objects : [];
+    let matched = false;
+    templateSnapshot = {
+      ...input.snapshot,
+      objects: snapshotObjects.map((item) => {
+        if (!item || item.id !== selectedImage.id) {
+          return item;
+        }
+
+        matched = true;
+        const extension =
+          item.extension && typeof item.extension === 'object' ? item.extension : {};
+        return {
+          ...item,
+          src: selectedImage.sourceUrl || item.src,
+          originSrc: selectedImage.sourceUrl || item.originSrc || item.src,
+          sourceDataUrl: selectedImage.sourceDataUrl || item.sourceDataUrl,
+          aiSourceDataUrl: selectedImage.sourceDataUrl || item.aiSourceDataUrl,
+          extensionType: 'ai-slot',
+          extension: {
+            ...extension,
+            role: selectedImage.role,
+            slotName: selectedImage.label,
+            aiEnabled: true,
+            aiMode: selectedImage.mode,
+            editableAfterGenerate: true,
+            regenerateScope: 'self',
+            constraints: {
+              editableSource: 'selected-image',
+              targetFrameWidth: selectedImage.displayWidth,
+              targetFrameHeight: selectedImage.displayHeight,
+              targetAspectRatio: selectedImage.aspectRatio,
+              targetFit: isTransparentCutoutIntent(input.message) ? 'contain' : 'cover',
+            },
+          },
+        };
+      }),
+    };
+
+    if (!matched) {
+      throw new Error('当前选中的图片图层未能写入 AI 请求，请重新选择后再试。');
+    }
   }
 
-  const selection = activeCanvasSelection.value;
-  if (selection && shouldUseLayerMode(promptValue)) {
-    return [buildSelectedLayerTarget(selection)];
-  }
-
-  if (workMode.value === 'auto' && !isOverallDesignIntent(promptValue)) {
-    return [];
-  }
-
-  if (shouldBlockOverallDesign(promptValue)) {
-    return [];
-  }
-
-  return buildSuggestedTargets(enabledSlots.value, promptValue).slots.map((slot) => ({
-    slotId: slot.id,
-    role: slot.role,
-    mode: slot.aiMode,
-    targetSource: 'ai-slot' as const,
-  }));
+  return {
+    templateId: templateId.value || 'local-current',
+    language: language.value,
+    userPrompt: input.message,
+    targets: [buildToolTarget()],
+    canvas: {
+      width: input.width,
+      height: input.height,
+    },
+    templateSnapshot,
+    clientRequestId: uuidv4(),
+    actionKey: getToolActionKey(),
+    actionCategory: imageToolMode.value === 'edit' ? 'edit' : 'material',
+    preserveLayout: imageToolMode.value === 'edit',
+    candidateCount: 1,
+  };
 }
 
-function buildDirectImageEditRequest(input: {
+function buildChatTurnPayload(input: {
   message: string;
   width: number;
   height: number;
@@ -1267,92 +1582,23 @@ function buildDirectImageEditRequest(input: {
     objects?: Array<Record<string, unknown>>;
   };
 }) {
-  const selectedImage = directImageSelection.value;
-  if (!selectedImage) {
-    throw new Error('请先选择一个图片图层。');
-  }
-
-  if (!selectedImage.sourceUrl && !selectedImage.sourceDataUrl) {
-    throw new Error(
-      '当前图片图层缺少可用于 AI 编辑的图片来源，请重新选择图片或先生成一张远程图片后再编辑。'
-    );
-  }
-
-  if (isLocalOnlyImageSource(selectedImage.sourceUrl) && !selectedImage.sourceDataUrl) {
-    throw new Error(
-      '当前图片是浏览器临时地址，服务端 AI 无法读取。请先使用平台生成图片，或换成可访问的远程图片后再编辑。'
-    );
-  }
-
-  const snapshotObjects = Array.isArray(input.snapshot.objects) ? input.snapshot.objects : [];
-  let matched = false;
-  const templateSnapshot = {
-    ...input.snapshot,
-    objects: snapshotObjects.map((item) => {
-      if (!item || item.id !== selectedImage.id) {
-        return item;
-      }
-
-      matched = true;
-      const extension = item.extension && typeof item.extension === 'object' ? item.extension : {};
-      return {
-        ...item,
-        src: selectedImage.sourceUrl || item.src,
-        originSrc: selectedImage.sourceUrl || item.originSrc || item.src,
-        sourceDataUrl: selectedImage.sourceDataUrl || item.sourceDataUrl,
-        aiSourceDataUrl: selectedImage.sourceDataUrl || item.aiSourceDataUrl,
-        extensionType: 'ai-slot',
-        extension: {
-          ...extension,
-          role: selectedImage.role,
-          slotName: selectedImage.label,
-          aiEnabled: true,
-          aiMode: selectedImage.mode,
-          editableAfterGenerate: true,
-          regenerateScope: 'self',
-          constraints: {
-            editableSource: 'selected-image',
-            targetFrameWidth: selectedImage.displayWidth,
-            targetFrameHeight: selectedImage.displayHeight,
-            targetAspectRatio: selectedImage.aspectRatio,
-            targetFit: isTransparentCutoutIntent(input.message) ? 'contain' : 'cover',
-          },
-        },
-      };
-    }),
-  };
-
-  if (!matched) {
-    throw new Error('当前选中的图片图层未能写入 AI 请求，请重新选择后再试。');
-  }
-
   return {
     conversationId: templateId.value || 'local-current',
-    templateId: templateId.value || 'direct-image-edit',
+    templateId: templateId.value,
     language: language.value,
     message: input.message,
     conversationHistory: (input.conversationHistory || conversationMessages.value).slice(-12),
-    selection: {
-      objectId: selectedImage.id,
-      objectType: 'image',
-    },
-    targets: [
-      {
-        slotId: selectedImage.id,
-        role: selectedImage.role,
-        mode: selectedImage.mode,
-        targetSource: 'selected-layer',
-      },
-    ],
+    selection: null,
+    targets: [],
     canvas: {
       width: input.width,
       height: input.height,
     },
-    templateSnapshot,
+    templateSnapshot: input.snapshot,
     clientRequestId: uuidv4(),
-    actionKey: pendingQuickAction.value?.actionKey || 'image-edit',
-    actionCategory: pendingQuickAction.value?.category || 'edit',
-    preserveLayout: true,
+    actionKey: 'assistant-chat-only',
+    actionCategory: 'edit' as const,
+    preserveLayout: false,
     candidateCount: 1,
   };
 }
@@ -1480,11 +1726,14 @@ async function applyJobResult(job: DesignerAiJob) {
 async function pollJob(jobId: string) {
   isPolling.value = true;
   clearPolling();
+  let transientFailureCount = 0;
+  const maxTransientFailureCount = 8;
 
   const run = async () => {
     try {
       progressClock.value = Date.now();
       const job = await getDesignerAiJob(jobId);
+      transientFailureCount = 0;
       currentJob.value = job;
 
       if (job.status === 'succeeded' || job.status === 'partial_success') {
@@ -1514,6 +1763,13 @@ async function pollJob(jobId: string) {
 
       pollingTimer = setTimeout(run, 1500);
     } catch (error) {
+      if (isTransientPollingError(error) && transientFailureCount < maxTransientFailureCount) {
+        transientFailureCount += 1;
+        errorMessage.value = '结果读取超时，正在继续重试...';
+        pollingTimer = setTimeout(run, Math.min(1500 * (transientFailureCount + 1), 8000));
+        return;
+      }
+
       isPolling.value = false;
       errorMessage.value = formatErrorMessage(error, '任务轮询失败');
       appendConversationEntry('error', '错误', errorMessage.value);
@@ -1557,6 +1813,8 @@ async function submitJob() {
 
   const userPrompt = prompt.value.trim();
   syncDirectImageSelection();
+  const conversationHistory = conversationMessages.value.slice(-12);
+  const { width, height, snapshot } = getCanvasSnapshot();
 
   if (shouldBlockOverallDesign(userPrompt)) {
     appendConversationEntry('user', '你', userPrompt);
@@ -1573,7 +1831,7 @@ async function submitJob() {
     return;
   }
 
-  if (shouldAskForLayerSelection(userPrompt)) {
+  if (!isToolMode.value && shouldAskForLayerSelection(userPrompt)) {
     appendConversationEntry('user', '你', userPrompt);
     prompt.value = '';
     appendConversationEntry(
@@ -1585,48 +1843,36 @@ async function submitJob() {
     return;
   }
 
-  const conversationHistory = conversationMessages.value.slice(-12);
   isSubmitting.value = true;
   errorMessage.value = '';
 
   try {
-    const { width, height, snapshot } = getCanvasSnapshot();
-    const layerSelection = shouldUseLayerMode(userPrompt) ? activeCanvasSelection.value : null;
-    const requestPayload = isDirectImageMode.value
-      ? buildDirectImageEditRequest({
-          message: userPrompt,
-          width,
-          height,
-          conversationHistory,
-          snapshot,
-        })
-      : {
-          conversationId: templateId.value || 'local-current',
-          templateId: templateId.value,
-          language: language.value,
-          message: userPrompt,
-          conversationHistory,
-          selection: layerSelection
-            ? {
-                objectId: layerSelection.objectId,
-                objectType: layerSelection.objectType,
-              }
-            : null,
-          targets: buildAssistantTargets(userPrompt),
-          canvas: {
-            width,
-            height,
-          },
-          templateSnapshot: snapshot,
-          clientRequestId: uuidv4(),
-          actionKey: pendingQuickAction.value?.actionKey || '',
-          actionCategory: pendingQuickAction.value?.category || 'edit',
-          preserveLayout: true,
-          candidateCount: 1,
-        };
-
     appendConversationEntry('user', '你', userPrompt);
     prompt.value = '';
+
+    if (isToolMode.value) {
+      const requestPayload = buildToolJobPayload({
+        message: userPrompt,
+        width,
+        height,
+        conversationHistory,
+        snapshot,
+      });
+
+      const response = await createDesignerAiJob(requestPayload);
+      currentJob.value = await getDesignerAiJob(response.jobId);
+      await pollJob(response.jobId);
+      pendingQuickAction.value = null;
+      return;
+    }
+
+    const requestPayload = buildChatTurnPayload({
+      message: userPrompt,
+      width,
+      height,
+      conversationHistory,
+      snapshot,
+    });
 
     const response = await createDesignerAssistantTurn(requestPayload);
 
@@ -1638,12 +1884,6 @@ async function submitJob() {
       appendConversationEntry('error', '错误', response.error.message);
       return;
     }
-
-    if (response.jobIds?.[0]) {
-      currentJob.value = await getDesignerAiJob(response.jobIds[0]);
-      await pollJob(response.jobIds[0]);
-    }
-    pendingQuickAction.value = null;
   } catch (error) {
     errorMessage.value = formatErrorMessage(error, '任务创建失败');
     appendConversationEntry('error', '错误', errorMessage.value);
@@ -1715,7 +1955,9 @@ onMounted(() => {
   canvasEditor.canvas?.on('selection:updated', syncDirectImageSelection);
   canvasEditor.canvas?.on('selection:cleared', syncDirectImageSelection);
   canvasEditor.canvas?.on('object:modified', syncDirectImageSelection);
-  stopPanelActionListener = onDesignerAiPanelAction(handleDesignerAiPanelAction);
+  if (isToolMode.value) {
+    stopPanelActionListener = onDesignerAiPanelAction(handleDesignerAiPanelAction);
+  }
   stopSessionListener = onPlatformSessionTokenChange(() => {
     void loadActivationStatus()
       .then(() => {
@@ -1797,6 +2039,129 @@ onBeforeUnmount(() => {
 .designer-ai-content--embedded .designer-ai-content__body {
   min-height: 0;
   overflow: hidden;
+}
+
+.designer-ai-content__tool {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 0 2px 16px;
+}
+
+.designer-ai-content__tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+}
+
+.designer-ai-content__tool-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.designer-ai-content__tool-card-head strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.designer-ai-content__reference {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.designer-ai-content__reference img {
+  width: 92px;
+  height: 92px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.designer-ai-content__reference-meta,
+.designer-ai-content__reference-empty {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.designer-ai-content__reference-meta strong,
+.designer-ai-content__reference-empty strong {
+  color: #111827;
+  line-height: 1.4;
+}
+
+.designer-ai-content__reference-meta span,
+.designer-ai-content__reference-empty span,
+.designer-ai-content__tool-card p,
+.designer-ai-content__tool-actions small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.designer-ai-content__reference-empty {
+  padding: 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.designer-ai-content__tool-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.designer-ai-content__tool-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.designer-ai-content__tool-actions > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.designer-ai-content__result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.designer-ai-content__result-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.designer-ai-content__result-card img {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.designer-ai-content__result-card span {
+  color: #64748b;
+  font-size: 12px;
 }
 
 .designer-ai-content__chat {

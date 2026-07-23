@@ -10,6 +10,14 @@ type CanvasObject = fabric.Object & {
   id?: string;
   name?: string;
   text?: string;
+  originSrc?: string;
+  getSrc?: () => string;
+  get?: (key: string) => unknown;
+  getScaledWidth?: () => number;
+  getScaledHeight?: () => number;
+  toDataURL?: (options?: Record<string, unknown>) => string;
+  getElement?: () => unknown;
+  _element?: unknown;
 };
 
 function getObjectTypeLabel(object: CanvasObject) {
@@ -34,6 +42,85 @@ function getObjectLabel(object: CanvasObject) {
 
 function buildSelectionContext(object: CanvasObject) {
   return `当前选中的${getObjectTypeLabel(object)}「${getObjectLabel(object)}」`;
+}
+
+function resolveAspectRatioLabel(width: number, height: number) {
+  const normalizedWidth = Math.max(1, Number(width) || 1);
+  const normalizedHeight = Math.max(1, Number(height) || 1);
+  const ratio = normalizedWidth / normalizedHeight;
+  const candidates = [
+    { label: '1:1', value: 1 },
+    { label: '4:5', value: 4 / 5 },
+    { label: '3:4', value: 3 / 4 },
+    { label: '2:3', value: 2 / 3 },
+    { label: '9:16', value: 9 / 16 },
+    { label: '16:9', value: 16 / 9 },
+    { label: '4:3', value: 4 / 3 },
+    { label: '3:2', value: 3 / 2 },
+  ];
+
+  return (
+    candidates
+      .map((candidate) => ({
+        ...candidate,
+        distance: Math.abs(candidate.value - ratio),
+      }))
+      .sort((left, right) => left.distance - right.distance)[0]?.label || '1:1'
+  );
+}
+
+function buildObjectPreviewDataUrl(object: CanvasObject) {
+  try {
+    const dataUrl = String(
+      object.toDataURL?.({
+        format: 'png',
+        multiplier: 1,
+      }) || ''
+    ).trim();
+    if (dataUrl.startsWith('data:image/')) {
+      return dataUrl;
+    }
+  } catch {
+    // Ignore preview export failures and fall back to the source image.
+  }
+
+  const sourceUrl =
+    String(object.originSrc || '').trim() ||
+    String(object.getSrc?.() || '').trim() ||
+    String(object.get?.('src') || '').trim();
+  return sourceUrl.startsWith('data:image/') ? sourceUrl : '';
+}
+
+function buildReferenceSnapshot(object: CanvasObject) {
+  const width = Math.max(
+    1,
+    Math.round(Number(object.getScaledWidth?.() || object.get?.('width') || 0) || 1)
+  );
+  const height = Math.max(
+    1,
+    Math.round(Number(object.getScaledHeight?.() || object.get?.('height') || 0) || 1)
+  );
+  const sourceUrl =
+    String(object.originSrc || '').trim() ||
+    String(object.getSrc?.() || '').trim() ||
+    String(object.get?.('src') || '').trim();
+  const sourceDataUrl = buildObjectPreviewDataUrl(object);
+
+  return {
+    objectId: String(object.id || ''),
+    objectType: String(object.type || 'object'),
+    label: getObjectLabel(object),
+    sourceUrl: sourceUrl || undefined,
+    sourceDataUrl: sourceDataUrl || undefined,
+    previewDataUrl: sourceDataUrl || sourceUrl || undefined,
+    frame: {
+      left: Math.round(Number(object.left || 0)),
+      top: Math.round(Number(object.top || 0)),
+      width,
+      height,
+      aspectRatio: resolveAspectRatioLabel(width, height),
+    },
+  };
 }
 
 export default class DesignerAiContextMenuPlugin implements IPluginTempl {
@@ -69,11 +156,29 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
       ...detail,
       objectId: String(activeObject?.id || ''),
       objectType: String(activeObject?.type || ''),
+      referenceSnapshot: activeObject ? buildReferenceSnapshot(activeObject) : undefined,
     });
   }
 
-  private buildGenerationActions() {
+  private buildGenerationActions(includeReferenceAction = false) {
+    const referenceActions = includeReferenceAction
+      ? [
+          {
+            text: this.withImageAiCost('发送到AI生图'),
+            hotkey: '',
+            onclick: () =>
+              this.emitAction({
+                actionKey: 'send-to-ai-image',
+                label: '发送到AI生图',
+                category: 'edit',
+                prompt: '',
+              }),
+          },
+        ]
+      : [];
+
     return [
+      ...referenceActions,
       {
         text: this.withImageAiCost('生成背景'),
         hotkey: '',
@@ -113,9 +218,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
     ];
   }
 
-  private buildImageActions(activeObject: CanvasObject) {
-    const context = buildSelectionContext(activeObject);
-
+  private buildImageActions() {
     return [
       {
         text: this.withImageAiCost('换背景/场景'),
@@ -125,7 +228,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
             actionKey: 'image-scene',
             label: '换背景/场景',
             category: 'edit',
-            prompt: `${context}，请替换背景或场景，保留主体、构图和比例关系，输出适合继续编辑的结果。`,
+            prompt: '替换背景或场景，保留主体、构图和比例关系，输出适合继续编辑的干净结果。',
           }),
       },
       {
@@ -136,7 +239,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
             actionKey: 'image-material',
             label: '改材质配色',
             category: 'edit',
-            prompt: `${context}，请优化材质和配色，保持主体不变，尽量不要改动版式。`,
+            prompt: '优化材质和配色，保持主体不变，输出边缘干净、可继续排版的结果。',
           }),
       },
       {
@@ -147,7 +250,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
             actionKey: 'image-clean',
             label: '清理杂项',
             category: 'edit',
-            prompt: `${context}，请清理杂项、噪点和干扰元素，尽量不改变主体。`,
+            prompt: '清理杂项、噪点和干扰元素，尽量不改变主体结构和识别度。',
           }),
       },
       {
@@ -158,7 +261,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
             actionKey: 'transparent-cutout',
             label: '抠图透明底',
             category: 'edit',
-            prompt: `${context}，请处理成透明底素材，去除白底、杂色边缘和多余背景，保留主体轮廓、姿态和细节，输出适合继续排版的 PNG 风格结果。`,
+            prompt: '处理成透明底素材，去除白底、杂色边缘和多余背景，保留主体轮廓、姿态和细节。',
           }),
       },
       {
@@ -168,7 +271,7 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
           this.emitAction({
             label: '自由描述',
             category: 'edit',
-            prompt: `${context}，请继续描述修改需求，并先给出最稳妥的编辑方案。`,
+            prompt: '',
           }),
       },
     ];
@@ -248,15 +351,15 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
       return [
         null,
         {
-          text: 'AI 快捷操作',
+          text: 'AI 生图',
           hotkey: '❯',
-          subitems: this.buildGenerationActions(),
+          subitems: this.buildGenerationActions(false),
         },
       ];
     }
 
     const isTextObject = activeObject.type === 'textbox' || activeObject.type === 'i-text';
-    const subitems = activeObject.type === 'image' ? this.buildImageActions(activeObject) : [];
+    const subitems = activeObject.type === 'image' ? this.buildImageActions() : [];
 
     if (isTextObject) {
       subitems.push(...this.buildTextActions(activeObject));
@@ -266,12 +369,12 @@ export default class DesignerAiContextMenuPlugin implements IPluginTempl {
       subitems.push(...this.buildFallbackActions(activeObject));
     }
 
-    subitems.push(...this.buildGenerationActions());
+    subitems.push(...this.buildGenerationActions(true));
 
     return [
       null,
       {
-        text: 'AI 快捷操作',
+        text: 'AI 生图',
         hotkey: '❯',
         subitems,
       },

@@ -38,6 +38,7 @@ const leftBarComponent = {
 const leftBarProps: Record<string, Record<string, unknown>> = {
   designerAi: {
     embedded: true,
+    panelMode: 'tool',
   },
   mine: {
     embedded: true,
@@ -72,7 +73,7 @@ const primaryLeftBar = reactive([
   },
   {
     key: 'designerAi',
-    name: computed(() => t('ai_assistant')),
+    name: computed(() => 'AI生图'),
     icon: 'ios-color-wand-outline',
   },
   {

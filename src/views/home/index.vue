@@ -20,6 +20,9 @@
           </div>
         </div>
         <Right v-if="state.show"></Right>
+        <div v-if="state.show" class="designer-ai-dock">
+          <designerAiPanel embedded panel-mode="chat" />
+        </div>
       </Content>
     </Layout>
   </div>
@@ -30,6 +33,7 @@ import { onMounted, onUnmounted, provide, reactive } from 'vue';
 import Top from './components/top/index.vue';
 import Left from './components/left/index.vue';
 import Right from './components/right/index.vue';
+import designerAiPanel from '@/components/designerAiPanel.vue';
 
 import zoom from '@/components/zoom.vue';
 import dragMode from '@/components/dragMode.vue';
@@ -225,5 +229,15 @@ provide('canvasEditor', canvasEditor);
   background-position: var(--offsetX) var(--offsetY),
     calc(var(--size) + var(--offsetX)) calc(var(--size) + var(--offsetY));
   background-size: calc(var(--size) * 2) calc(var(--size) * 2);
+}
+
+.designer-ai-dock {
+  width: 360px;
+  min-width: 360px;
+  max-width: 360px;
+  height: 100%;
+  border-left: 1px solid #eef2f8;
+  background: #fff;
+  overflow: hidden;
 }
 </style>
