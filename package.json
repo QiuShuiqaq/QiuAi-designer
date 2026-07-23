@@ -2,7 +2,7 @@
   "name": "qiuai-designer",
   "productName": "QiuAi Designer",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "QiuAi Designer desktop poster and image design tool.",
   "main": "electron/main.cjs",
   "packageManager": "pnpm@8.4.0",
@@ -100,9 +100,10 @@
     "nodeGypRebuild": false,
     "buildDependenciesFromSource": false,
     "directories": {
-      "output": "../package/QiuAi-designer1.0.1-win"
+      "output": "../package/QiuAi-designer1.0.2-win"
     },
     "files": [
+      "build/icons/**/*",
       "dist/**/*",
       "electron/**/*",
       "package.json"

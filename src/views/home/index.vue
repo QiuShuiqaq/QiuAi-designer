@@ -20,8 +20,23 @@
           </div>
         </div>
         <Right v-if="state.show"></Right>
-        <div v-if="state.show" class="designer-ai-dock">
-          <designerAiPanel embedded panel-mode="chat" />
+        <div
+          v-if="state.show"
+          class="designer-ai-dock"
+          :class="{ 'designer-ai-dock--collapsed': designerAiDockCollapsed }"
+        >
+          <div class="designer-ai-dock__header">
+            <strong v-if="!designerAiDockCollapsed">智能体设计师</strong>
+            <button type="button" class="designer-ai-dock__toggle" @click="toggleDesignerAiDock">
+              {{ designerAiDockCollapsed ? '智能体' : '收起' }}
+            </button>
+          </div>
+          <designerAiPanel
+            v-show="!designerAiDockCollapsed"
+            embedded
+            panel-mode="chat"
+            :show-header="false"
+          />
         </div>
       </Content>
     </Layout>
@@ -29,7 +44,7 @@
 </template>
 
 <script name="Home" setup lang="ts">
-import { onMounted, onUnmounted, provide, reactive } from 'vue';
+import { onMounted, onUnmounted, provide, reactive, ref } from 'vue';
 import Top from './components/top/index.vue';
 import Left from './components/left/index.vue';
 import Right from './components/right/index.vue';
@@ -80,6 +95,7 @@ import Editor, {
 const APIHOST = import.meta.env.APP_APIHOST;
 const canvasEditor = new Editor() as IEditor;
 let detachLocalDesignAutosave: (() => void) | null = null;
+const designerAiDockCollapsed = ref(false);
 
 const state = reactive({
   show: false,
@@ -157,6 +173,10 @@ const rulerSwitch = (val) => {
   document.activeElement.blur();
 };
 
+const toggleDesignerAiDock = () => {
+  designerAiDockCollapsed.value = !designerAiDockCollapsed.value;
+};
+
 provide('fabric', fabric);
 provide('canvasEditor', canvasEditor);
 </script>
@@ -232,12 +252,65 @@ provide('canvasEditor', canvasEditor);
 }
 
 .designer-ai-dock {
+  display: flex;
   width: 360px;
   min-width: 360px;
   max-width: 360px;
   height: 100%;
+  flex-direction: column;
   border-left: 1px solid #eef2f8;
   background: #fff;
   overflow: hidden;
+  transition: width 0.18s ease, min-width 0.18s ease, max-width 0.18s ease;
+}
+
+.designer-ai-dock--collapsed {
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
+}
+
+.designer-ai-dock__header {
+  display: flex;
+  height: 40px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.designer-ai-dock--collapsed .designer-ai-dock__header {
+  justify-content: center;
+  padding: 0;
+}
+
+.designer-ai-dock__header strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.designer-ai-dock__toggle {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #475467;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.designer-ai-dock--collapsed .designer-ai-dock__toggle {
+  height: auto;
+  padding: 8px 6px;
+  line-height: 1.2;
+  writing-mode: vertical-rl;
+}
+
+.designer-ai-dock__toggle:hover {
+  border-color: #2d8cf0;
+  color: #2d8cf0;
 }
 </style>

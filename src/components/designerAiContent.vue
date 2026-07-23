@@ -1,9 +1,9 @@
 <template>
   <section class="designer-ai-content" :class="{ 'designer-ai-content--embedded': embedded }">
-    <div v-if="embedded" class="designer-ai-content__header">
+    <div v-if="embedded && showHeader" class="designer-ai-content__header">
       <div class="designer-ai-content__header-main">
         <h3>{{ panelTitle }}</h3>
-        <p>{{ panelSubtitle }}</p>
+        <p v-if="panelSubtitle">{{ panelSubtitle }}</p>
       </div>
     </div>
 
@@ -56,38 +56,21 @@
 
         <section class="designer-ai-content__tool-card">
           <div class="designer-ai-content__tool-card-head">
-            <strong>参数选择</strong>
-            <Tag color="primary">{{ canvasImageSize }}</Tag>
-          </div>
-
-          <ButtonGroup class="designer-ai-content__tool-modes" size="small">
-            <Button
-              v-for="option in imageToolModeOptions"
-              :key="option.value"
-              :type="imageToolMode === option.value ? 'primary' : 'default'"
-              :disabled="option.value === 'edit' && !toolReferenceSelection"
-              @click="imageToolMode = option.value"
-            >
-              {{ option.label }}
-            </Button>
-          </ButtonGroup>
-
-          <p>{{ imageToolModeHint }}</p>
-        </section>
-
-        <section class="designer-ai-content__tool-card">
-          <div class="designer-ai-content__tool-card-head">
             <strong>提示词输入</strong>
-            <Tag v-if="designerAiCostPreview" color="primary">
-              {{ formatDesignerAiCostBadge(designerAiCostPreview.points) }}
-            </Tag>
+            <div class="designer-ai-content__tool-card-tags">
+              <Tag color="primary">{{ toolModeLabel }}</Tag>
+              <Tag color="primary">{{ canvasImageSize }}</Tag>
+              <Tag v-if="designerAiCostPreview" color="primary">
+                {{ formatDesignerAiCostBadge(designerAiCostPreview.points) }}
+              </Tag>
+            </div>
           </div>
 
           <Input
             v-model="prompt"
             type="textarea"
             :autosize="{ minRows: 6, maxRows: 10 }"
-            placeholder="直接描述要生成或修改的画面，例如：把蛋糕替换成蓝莓蛋糕，保留干净边缘。"
+            placeholder="直接描述要生成或修改的画面。例如：把蛋糕换成蓝莓蛋糕；或生成一张春季海报背景。"
           />
 
           <div class="designer-ai-content__tool-actions">
@@ -185,7 +168,7 @@
             <p>{{ jobProgressDescription }}</p>
           </div>
 
-          <div v-if="lastAssistantTurn" class="designer-ai-content__assistant-summary">
+          <div v-if="shouldShowAssistantSummary" class="designer-ai-content__assistant-summary">
             <div class="designer-ai-content__assistant-summary-head">
               <Tag :color="assistantModeColor(lastAssistantTurn.mode)">
                 {{ formatAssistantMode(lastAssistantTurn.mode) }}
@@ -336,6 +319,10 @@ const props = defineProps({
     type: String,
     default: 'chat',
   },
+  showHeader: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const embedded = computed(() => props.embedded);
@@ -373,12 +360,7 @@ type DesignerAiConversationMessage = {
 };
 
 type DesignerAiWorkMode = 'auto' | 'overall' | 'layer';
-
 type DesignerAiImageToolMode = 'edit' | 'background' | 'element' | 'artText';
-type DesignerAiImageToolModeOption = {
-  value: DesignerAiImageToolMode;
-  label: string;
-};
 
 type CanvasSizeReader = {
   getWidth?: () => number;
@@ -411,7 +393,6 @@ const messagesRef = ref<HTMLElement | null>(null);
 const pendingQuickAction = ref<DesignerAiQuickActionDetail | null>(null);
 const progressClock = ref(Date.now());
 const workMode = ref<DesignerAiWorkMode>('auto');
-const imageToolMode = ref<DesignerAiImageToolMode>('background');
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let stopPanelActionListener: (() => void) | null = null;
@@ -455,32 +436,25 @@ const isDirectImageMode = computed(() => {
 
   return shouldUseLayerMode(prompt.value);
 });
-const imageToolModeOptions: DesignerAiImageToolModeOption[] = [
-  { value: 'edit', label: '参考图编辑' },
-  { value: 'background', label: '生成背景' },
-  { value: 'element', label: '生成元素' },
-  { value: 'artText', label: '生成艺术字' },
-];
 const panelTitle = computed(() => (isToolMode.value ? 'AI生图' : '智能体设计师'));
 const panelSubtitle = computed(() =>
-  isToolMode.value ? '右键发送参考图后再生成，避免选中状态漂移。' : '您好，我是您的专属智能体设计师'
+  isToolMode.value ? '右键发送参考图后再生成，避免选中状态漂移。' : ''
 );
-const imageToolModeHint = computed(() => {
-  if (imageToolMode.value === 'edit') {
-    return toolReferenceSelection.value
-      ? '使用右键固定的参考图进行定向改图，结果会自动应用到原图层。'
-      : '请先在画布图片上右键，选择“发送到AI生图”。';
+const toolModeLabel = computed(() => {
+  const mode = resolveToolMode(prompt.value);
+  if (mode === 'edit') {
+    return '参考图编辑';
   }
 
-  if (imageToolMode.value === 'background') {
-    return '生成一张可用于当前画布的背景图。';
+  if (mode === 'artText') {
+    return '艺术字生成';
   }
 
-  if (imageToolMode.value === 'artText') {
-    return '生成可继续排版的艺术字或标题字图片素材。';
+  if (mode === 'element') {
+    return '元素生成';
   }
 
-  return '生成贴纸、装饰、产品氛围元素等独立素材。';
+  return '新图生成';
 });
 const canvasImagePointTier = computed(() => {
   const editorCanvas = (canvasEditor as unknown as { canvas?: CanvasSizeReader }).canvas;
@@ -551,11 +525,15 @@ const designerAiBillingHint = computed(() => {
   const promptValue = prompt.value.trim();
   if (isToolMode.value) {
     if (!promptValue) {
-      return '生图会消耗 AI 点，具体以服务端结算为准。';
+      return '有参考图时自动编辑参考图；无参考图时自动生成新图片。';
     }
 
-    if (imageToolMode.value === 'edit' && !toolReferenceSelection.value) {
-      return '参考图编辑需要先通过右键发送参考图。';
+    if (toolReferenceSelection.value) {
+      return designerAiCostPreview.value?.points
+        ? `将按参考图编辑处理，预计消耗 ${formatDesignerAiPoints(
+            designerAiCostPreview.value.points
+          )}，最终以服务端结算为准。`
+        : '将按参考图编辑处理，具体消耗以服务端结算为准。';
     }
 
     return designerAiCostPreview.value?.points
@@ -587,7 +565,7 @@ const designerAiBillingHint = computed(() => {
     return '本次为文案设计，具体消耗以服务端结算为准。';
   }
 
-  return '普通聊天不扣 AI 点；生成背景、元素、艺术字和图层改图会扣点。';
+  return '普通聊天不扣 AI 点；AI 生图和图层改图会扣点。';
 });
 const isActivated = computed(() => {
   return (
@@ -602,7 +580,6 @@ const canSubmit = computed(() => {
     platformReady &&
       isActivated.value &&
       prompt.value.trim() &&
-      (!isToolMode.value || imageToolMode.value !== 'edit' || toolReferenceSelection.value) &&
       !isSubmitting.value &&
       !isPolling.value
   );
@@ -635,6 +612,16 @@ const generatedImageResults = computed(() => {
       return null;
     })
     .filter((item): item is { id: string; label: string; src: string } => Boolean(item));
+});
+const shouldShowAssistantSummary = computed(() => {
+  const turn = lastAssistantTurn.value;
+  if (!turn) {
+    return false;
+  }
+
+  return Boolean(
+    turn.needsConfirmation || turn.designPlan || turn.jobIds?.length || turn.toolCalls?.length
+  );
 });
 
 const canCancelJob = computed(() => {
@@ -925,27 +912,6 @@ function createSelectionFromReferenceSnapshot(
   };
 }
 
-function setToolModeFromAction(actionKey = '') {
-  if (actionKey === 'generate-background') {
-    imageToolMode.value = 'background';
-    return;
-  }
-
-  if (actionKey === 'generate-art-text') {
-    imageToolMode.value = 'artText';
-    return;
-  }
-
-  if (actionKey === 'generate-element') {
-    imageToolMode.value = 'element';
-    return;
-  }
-
-  if (toolReferenceSelection.value) {
-    imageToolMode.value = 'edit';
-  }
-}
-
 function handleDesignerAiPanelAction(detail: DesignerAiQuickActionDetail) {
   const nextPrompt = String(detail.prompt || '').trim();
   const referenceSelection = detail.referenceSnapshot
@@ -962,7 +928,6 @@ function handleDesignerAiPanelAction(detail: DesignerAiQuickActionDetail) {
     lockedReferenceSelection.value = true;
   }
 
-  setToolModeFromAction(detail.actionKey || '');
   pendingQuickAction.value = detail;
   if (nextPrompt && detail.actionKey !== 'send-to-ai-image') {
     prompt.value = nextPrompt;
@@ -983,9 +948,6 @@ function clearToolReference() {
   lockedReferenceSelection.value = false;
   directImageSelection.value = null;
   activeCanvasSelection.value = null;
-  if (imageToolMode.value === 'edit') {
-    imageToolMode.value = 'background';
-  }
 }
 
 function normalizeCanvasJson() {
@@ -1416,38 +1378,58 @@ function shouldBlockOverallDesign(promptValue: string) {
   return workMode.value === 'overall' || isOverallDesignIntent(normalizedPrompt);
 }
 
-function getToolTargetRole() {
-  if (imageToolMode.value === 'artText') {
+function resolveToolMode(message = ''): DesignerAiImageToolMode {
+  if (toolReferenceSelection.value) {
+    return 'edit';
+  }
+
+  const normalizedPrompt = String(message || '').trim();
+  if (/艺术字|字效|标题字|字体设计|文字图片/.test(normalizedPrompt)) {
+    return 'artText';
+  }
+
+  if (/元素|素材|贴纸|装饰|图标|icon|logo|透明底|抠图|挂件|点缀/.test(normalizedPrompt)) {
+    return 'element';
+  }
+
+  return 'background';
+}
+
+function getToolTargetRole(message = '') {
+  const mode = resolveToolMode(message);
+  if (mode === 'artText') {
     return 'decoration' as const;
   }
 
-  if (imageToolMode.value === 'element') {
+  if (mode === 'element') {
     return 'decoration' as const;
   }
 
   return 'background' as const;
 }
 
-function getToolActionKey() {
-  if (imageToolMode.value === 'edit') {
+function getToolActionKey(message = '') {
+  const mode = resolveToolMode(message);
+  if (mode === 'edit') {
     return 'image-edit';
   }
 
-  if (imageToolMode.value === 'artText') {
+  if (mode === 'artText') {
     return 'generate-art-text';
   }
 
-  if (imageToolMode.value === 'element') {
+  if (mode === 'element') {
     return 'generate-element';
   }
 
   return 'generate-background';
 }
 
-function buildToolTarget() {
-  const role = getToolTargetRole();
+function buildToolTarget(message = '') {
+  const mode = resolveToolMode(message);
+  const role = getToolTargetRole(message);
 
-  if (imageToolMode.value === 'edit') {
+  if (mode === 'edit') {
     if (!toolReferenceSelection.value) {
       throw new Error('请先通过右键发送参考图到 AI 生图。');
     }
@@ -1493,7 +1475,9 @@ function buildToolJobPayload(input: {
   const selectedImage = toolReferenceSelection.value;
   let templateSnapshot = input.snapshot;
 
-  if (imageToolMode.value === 'edit') {
+  const toolMode = resolveToolMode(input.message);
+
+  if (toolMode === 'edit') {
     if (!selectedImage) {
       throw new Error('请先通过右键发送参考图到 AI 生图。');
     }
@@ -1558,16 +1542,16 @@ function buildToolJobPayload(input: {
     templateId: templateId.value || 'local-current',
     language: language.value,
     userPrompt: input.message,
-    targets: [buildToolTarget()],
+    targets: [buildToolTarget(input.message)],
     canvas: {
       width: input.width,
       height: input.height,
     },
     templateSnapshot,
     clientRequestId: uuidv4(),
-    actionKey: getToolActionKey(),
-    actionCategory: imageToolMode.value === 'edit' ? 'edit' : 'material',
-    preserveLayout: imageToolMode.value === 'edit',
+    actionKey: getToolActionKey(input.message),
+    actionCategory: toolMode === 'edit' ? 'edit' : 'material',
+    preserveLayout: toolMode === 'edit',
     candidateCount: 1,
   };
 }
@@ -1616,20 +1600,7 @@ async function refreshSlots() {
 
     parsedSlots.value = nextParsedSlots;
 
-    if (!nextParsedSlots.slots.length) {
-      appendConversationEntry(
-        'assistant',
-        'AI',
-        directImageSelection.value
-          ? '当前画布没有识别到 AI 图层，但可以直接对选中的图片图层进行修改。'
-          : '当前画布没有识别到 AI 图层。你可以先选中图片图层，或右键生成背景、元素、艺术字。'
-      );
-      return;
-    }
-
-    if (!nextParsedSlots.slots.some((slot) => slot.aiEnabled)) {
-      appendConversationEntry('assistant', 'AI', '当前模板的 AI 图层未启用，请先选择可编辑图层。');
-    }
+    // Slot parsing feeds the image-generation payload only. Do not add chat messages on boot.
   } catch (error) {
     errorMessage.value = formatErrorMessage(error, '解析 AI 图层失败');
   }
@@ -1822,7 +1793,7 @@ async function submitJob() {
     appendConversationEntry(
       'assistant',
       'AI',
-      '总体设计暂时禁用。当前请使用「图层设计」修改选中的图片图层，或右键生成背景、元素、艺术字。'
+      '总体设计暂时禁用。当前请使用左侧「AI生图」生成或编辑图片，也可以直接和我讨论设计方案。'
     );
     pendingQuickAction.value = null;
     if (workMode.value === 'overall') {
@@ -2119,10 +2090,11 @@ onBeforeUnmount(() => {
   background: #f8fafc;
 }
 
-.designer-ai-content__tool-modes {
+.designer-ai-content__tool-card-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
 }
 
 .designer-ai-content__tool-actions {

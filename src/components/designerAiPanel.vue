@@ -1,5 +1,5 @@
 <template>
-  <designerAiContent v-if="embedded" embedded :panel-mode="panelMode" />
+  <designerAiContent v-if="embedded" embedded :panel-mode="panelMode" :show-header="showHeader" />
 
   <div v-else class="designer-ai">
     <Button type="text" class="designer-ai__trigger" :disabled="!platformReady" @click="openModal">
@@ -7,7 +7,7 @@
     </Button>
 
     <Modal v-model="visible" title="智能体设计师" width="760" footer-hide>
-      <designerAiContent :panel-mode="panelMode" />
+      <designerAiContent :panel-mode="panelMode" :show-header="showHeader" />
     </Modal>
   </div>
 </template>
@@ -25,6 +25,10 @@ defineProps({
   panelMode: {
     type: String,
     default: 'chat',
+  },
+  showHeader: {
+    type: Boolean,
+    default: true,
   },
 });
 

@@ -2,6 +2,7 @@ const { app, BrowserWindow, shell } = require('electron');
 const path = require('node:path');
 
 const isDevelopment = !app.isPackaged;
+const appIconPath = path.join(__dirname, '..', 'build', 'icons', 'app-icon.ico');
 
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
@@ -10,6 +11,7 @@ function createMainWindow() {
     minWidth: 1180,
     minHeight: 760,
     title: 'QiuAi Designer',
+    icon: appIconPath,
     backgroundColor: '#f8fafc',
     autoHideMenuBar: true,
     webPreferences: {
